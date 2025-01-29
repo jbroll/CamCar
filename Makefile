@@ -11,9 +11,9 @@ BOARD=esp32:esp32:esp32cam
 PORT=/dev/ttyUSB0
 BAUD=115200
 
-HTML_FILE=index.html
-HEADER_FILE=webpage.h
 INO_FILE=CamCar.ino
+
+WEBROOT=webroot
 
 .PHONY: all clean build install upload monitor tester venv clean-venv
 
@@ -46,6 +46,9 @@ clean:
 
 ports:
 	$(ARDUINO_CLI) board list
+
+$(SRC)/%_file.cpp: $(WEBROOT)/%
+	./generate_file_entry.sh $<
 
 
 tester: $(VENV)/bin/activate
