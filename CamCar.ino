@@ -6,7 +6,9 @@
 #include <iostream>
 #include <sstream>
 #include <ESP32Servo.h>
-#include "webpage.h"  // Auto-generated header with gzipped HTML data
+
+#include "src/WebHandler.h"
+#include "src/TankDrive.h"
 
 #define PAN_PIN 14
 #define TILT_PIN 15
@@ -115,18 +117,6 @@ void moveCar(int inputValue) {
       rotateMotor(LEFT_MOTOR, STOP);    
       break;
   }
-}
-
-void handleRoot(AsyncWebServerRequest *request) {
-    AsyncWebServerResponse *response = 
-        request->beginResponse(200, "text/html", 
-                               webpage_html_gz, webpage_html_gz_len);
-    response->addHeader("Content-Encoding", "gzip");
-    request->send(response);
-}
-
-void handleNotFound(AsyncWebServerRequest *request) {
-    request->send(404, "text/plain", "File Not Found");
 }
 
 void onCarInputWebSocketEvent(AsyncWebSocket *server, 
@@ -304,9 +294,8 @@ void setup(void) {
   Serial.print("AP IP address: ");
   Serial.println(IP);
 
-  server.on("/", HTTP_GET, handleRoot);
-  server.onNotFound(handleNotFound);
-      
+  WebHandler::begin(server);
+
   wsCamera.onEvent(onCameraWebSocketEvent);
   server.addHandler(&wsCamera);
 

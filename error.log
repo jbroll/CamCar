@@ -1,5 +1,5 @@
 arduino-cli compile --fqbn esp32:esp32:esp32cam CamCar.ino
-Sketch uses 1054033 bytes (33%) of program storage space. Maximum is 3145728 bytes.
+Sketch uses 1053645 bytes (33%) of program storage space. Maximum is 3145728 bytes.
 Global variables use 49940 bytes (15%) of dynamic memory, leaving 277740 bytes for local variables. Maximum is 327680 bytes.
 
 [92mUsed library[0m        [92mVersion[0m [90mPath[0m
