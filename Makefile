@@ -30,7 +30,7 @@ install:
 	$(ARDUINO_CLI) -cli lib install --git-url https://github.com/me-no-dev/AsyncTCP
 
 build: $(HEADER_FILE)
-	$(ARDUINO_CLI) compile --fqbn $(BOARD) $(INO_FILE)
+	$(ARDUINO_CLI) compile --fqbn $(BOARD) -e $(INO_FILE)
 
 upload: build
 	$(ARDUINO_CLI) upload --fqbn $(BOARD) --port $(PORT) $(INO_FILE)
