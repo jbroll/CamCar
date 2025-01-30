@@ -7,6 +7,9 @@
 #include <sstream>
 #include <ESP32Servo.h>
 
+#include "./Prefs.h"
+
+#include "src/PrefEdit.h"
 #include "src/WebHandler.h"
 #include "src/TankDrive.h"
 
@@ -294,6 +297,7 @@ void setup(void) {
   Serial.print("AP IP address: ");
   Serial.println(IP);
 
+  PrefEdit::begin(&server, "/config", configParams, configPage);
   WebHandler::begin(server);
 
   wsCamera.onEvent(onCameraWebSocketEvent);
