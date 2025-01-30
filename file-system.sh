@@ -1,14 +1,15 @@
+
+output=src/gen/file-entries.cpp
+
+cat > $output << EOF
 #include "../FileSystem.h"
 
 // External references to File structures defined in individual .cpp files
-extern const FileEntry config_html_file;
-extern const FileEntry index_html_file;
-extern const FileEntry joystick_js_cpp_file;
+$(awk '/extern .* PROGMEM/ { print "extern const FileEntry "$4 ";" }' src/gen/*.cpp)
 
 // Array of pointers to all files
 const FileEntry* const FileSystem::files[] = {
-    &config_html_file,
-    &index_html_file,
-    &joystick_js_cpp_file,
+$(awk '/extern .* PROGMEM/ { print "    &" $4 "," }' src/gen/*.cpp)
     nullptr  // Sentinel
 };
+EOF
