@@ -14,13 +14,14 @@ BAUD=115200
 INO_FILE=CamCar.ino
 
 WEBROOT=webroot
+WEBROOT_FILES := $(wildcard $(WEBROOT)/*)
+GEN=src/gen
+GEN_FILES := $(patsubst $(WEBROOT)/%, $(GEN)/%_file.cpp, $(WEBROOT_FILES))
+GEN_ENTRIES := $(GEN)/file-entries.cpp
 
 .PHONY: all clean build install upload monitor tester venv clean-venv
 
 all: build
-
-$(HEADER_FILE): $(HTML_FILE) $(GZIP_SCRIPT)
-	./$(GZIP_SCRIPT) $< $@
 
 install:
 	$(ARDUINO_CLI) core update-index
@@ -29,7 +30,7 @@ install:
 	$(ARDUINO_CLI) -cli lib install --git-url https://github.com/me-no-dev/ESPAsyncWebServer
 	$(ARDUINO_CLI) -cli lib install --git-url https://github.com/me-no-dev/AsyncTCP
 
-build: $(HEADER_FILE)
+build: gen-sources
 	$(ARDUINO_CLI) compile --fqbn $(BOARD) -e $(INO_FILE)
 
 upload: build
@@ -39,7 +40,7 @@ monitor:
 	$(ARDUINO_CLI) monitor --port $(PORT) --config baudrate=$(BAUD)
 
 clean:
-	rm -f $(HEADER_FILE)
+	rm -f $(GEN)
 	rm -rf build/
 	rm -f *.bin
 	rm -f *.elf
@@ -47,9 +48,16 @@ clean:
 ports:
 	$(ARDUINO_CLI) board list
 
-$(SRC)/%_file.cpp: $(WEBROOT)/%
-	./generate_file_entry.sh $<
+$(GEN):
+	mkdir -p $(GEN)
 
+$(GEN)/%_file.cpp: $(WEBROOT)/% | $(GEN)
+	./file-entry.sh $<
+
+$(GEN_ENTRIES): $(GEN_FILES)
+	./file-system.sh
+
+gen-sources: $(GEN_FILES) $(GEN_ENTRIES)
 
 tester: $(VENV)/bin/activate
 	(. $(VENV)/bin/activate; ./tester.py)

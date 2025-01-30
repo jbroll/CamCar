@@ -1,6 +1,8 @@
 
+
 error.log
 
 build/
 venv/
 
+.*.swp
