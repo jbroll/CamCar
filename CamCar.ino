@@ -297,7 +297,7 @@ void setup(void) {
   Serial.print("AP IP address: ");
   Serial.println(IP);
 
-  PrefEdit::begin(&server, "/config", configParams, configPage);
+  PrefEdit::begin(&server, "/config", configParams);
   WebHandler::begin(server);
 
   wsCamera.onEvent(onCameraWebSocketEvent);
