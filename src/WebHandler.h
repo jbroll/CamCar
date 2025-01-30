@@ -23,9 +23,21 @@ public:
                 return;
             }
 
+            // Check for registered processor
+            ContentProcessor processor = FileSystem::getProcessor(path);
+            
             // Create response with proper content type
-            AsyncWebServerResponse *response = 
-                request->beginResponse(200, file->content_type, file->data, file->size);
+            AsyncWebServerResponse *response;
+            
+            if (processor) {
+                // If there's a processor, use template processing
+                response = request->beginResponse(200, file->content_type, 
+                    file->data, file->size, processor);
+            } else {
+                // Otherwise serve raw file
+                response = request->beginResponse(200, file->content_type,
+                    file->data, file->size);
+            }
                 
             // Add gzip header if content is compressed
             if (file->gzipped) {
@@ -37,4 +49,4 @@ public:
     }
 };
 
-#endif // WEBHANDLER_H
+#endif
