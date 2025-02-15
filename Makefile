@@ -37,7 +37,7 @@ upload: build
 	$(ARDUINO_CLI) upload --fqbn $(BOARD) --port $(PORT) $(INO_FILE)
 
 monitor:
-	$(ARDUINO_CLI) monitor --port $(PORT) --config baudrate=$(BAUD)
+	$(ARDUINO_CLI) monitor --port $(PORT) --config "baudrate=$(BAUD),dtr=off,rts=off"
 
 clean:
 	rm -f $(GEN)
