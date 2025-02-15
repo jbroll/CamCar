@@ -7,12 +7,16 @@
 
 class CameraHandler {
 public:
+    static constexpr uint8_t MAX_FPS = 30;
+    static constexpr uint8_t MIN_FPS = 1;
     CameraHandler(AsyncWebSocket& wsCamera);
     bool begin();
     void setClientId(uint32_t id) { mClientId = id; }
     uint32_t getClientId() const { return mClientId; }
     void clearClientId() { mClientId = 0; }
-    void sendFrame();
+    void setFPS(uint8_t fps);
+    uint8_t getFPS() const { return mTargetFPS; }
+    bool sendFrame();  // Returns true if frame was sent
 
 private:
     static constexpr int PWDN_GPIO_NUM = 32;
@@ -35,6 +39,8 @@ private:
     AsyncWebSocket& mWsCamera;
     uint32_t mClientId;
     camera_fb_t* mPriorFrame;
+    uint8_t mTargetFPS;
+    unsigned long mLastFrameTime;
 };
 
 #endif // CAMERA_HANDLER_H
