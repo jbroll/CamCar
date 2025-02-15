@@ -4,6 +4,8 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     : mWsCamera(wsCamera)
     , mClientId(0)
     , mPriorFrame(nullptr)
+    , mTargetFPS(15)  // Default to 15 FPS
+    , mLastFrameTime(0)
 {}
 
 bool CameraHandler::begin() {
@@ -53,21 +55,33 @@ bool CameraHandler::begin() {
     return true;
 }
 
-void CameraHandler::sendFrame() {
+void CameraHandler::setFPS(uint8_t fps) {
+    // Constrain FPS to valid range
+    mTargetFPS = constrain(fps, MIN_FPS, MAX_FPS);
+}
+
+bool CameraHandler::sendFrame() {
     if (mClientId == 0) {
         if (mPriorFrame) {
             esp_camera_fb_return(mPriorFrame);
             mPriorFrame = nullptr;
         }
-        return;
+        return false;
     }
 
-    unsigned long startTime = millis();
+    unsigned long currentTime = millis();
+    unsigned long frameInterval = 1000 / mTargetFPS;
+    
+    if (currentTime - mLastFrameTime < frameInterval) {
+        return false;  // Too soon for next frame
+    }
+
+    unsigned long startTime = currentTime;
 
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) {
         Serial.println("Camera capture failed");
-        return;
+        return false;
     }
 
     if (mPriorFrame) {
@@ -85,9 +99,13 @@ void CameraHandler::sendFrame() {
     }
 
     mPriorFrame = fb;
+    mLastFrameTime = currentTime;
 
     unsigned long duration = millis() - startTime;
-    if (duration > 100) {
-        Serial.printf("Frame processing time: %lu ms\n", duration);
+    if (duration > frameInterval) {
+        Serial.printf("Warning: Frame processing time (%lu ms) exceeds frame interval (%lu ms)\n", 
+                     duration, frameInterval);
     }
+
+    return true;
 }

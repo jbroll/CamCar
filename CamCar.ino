@@ -217,8 +217,8 @@ void setup(void) {
   Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
   Serial.printf("Flash Size: %d bytes\n", ESP.getFlashChipSize());
 
-  const boolean AP = true;
-#define WIFI_CONNECT_DELAY 500
+  const boolean AP = false;
+# define WIFI_CONNECT_DELAY 500
 
   if ( AP ) {
       const char* ssid = "CamCar";
@@ -255,6 +255,7 @@ void setup(void) {
   PrefEdit::begin(&server, "/config", configParams);
   WebHandler::begin(server);
 
+  camera.setFPS(10);
   wsCamera.onEvent(onCameraWebSocketEvent);
   server.addHandler(&wsCamera);
 
@@ -282,5 +283,7 @@ void loop() {
   wsCamera.cleanupClients(); 
   wsCarInput.cleanupClients(); 
 
-  camera.sendFrame();
+  if ( !camera.sendFrame() ) {
+      delay(1); 
+  }
 }
