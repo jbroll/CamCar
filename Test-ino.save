@@ -1,0 +1,58 @@
+#include <Arduino.h>
+
+#define FLASH_LED 4
+
+void setup() {
+  // Configure LED pin first
+  pinMode(FLASH_LED, OUTPUT);
+  
+  // Initialize serial with explicit settings
+  Serial.begin(115200, SERIAL_8N1, 3, 1);  // RX=3, TX=1
+  
+  // Wait briefly then send startup message
+  delay(100);
+  Serial.println("\nESP32-CAM Starting...");
+  Serial.printf("CPU Freq: %d MHz\n", ESP.getCpuFreqMHz());
+  Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
+  
+  // Flash LED rapidly at startup to indicate we completed setup()
+  for(int i = 0; i < 5; i++) {
+    digitalWrite(FLASH_LED, HIGH);
+    delay(100);
+    digitalWrite(FLASH_LED, LOW);
+    delay(100);
+  }
+}
+
+unsigned long lastBlink = 0;
+unsigned long lastPrint = 0;
+bool ledState = false;
+
+void loop() {
+  unsigned long now = millis();
+  
+  // Blink LED every 500ms
+  if(now - lastBlink >= 500) {
+    ledState = !ledState;
+    digitalWrite(FLASH_LED, ledState);
+    lastBlink = now;
+    
+    // Try to send a message when LED changes
+    if(Serial.availableForWrite() > 0) {
+      Serial.printf("LED State: %s at %lu ms\n", 
+                   ledState ? "ON" : "OFF", now);
+    }
+  }
+  
+  // Print diagnostic info every 5 seconds
+  if(now - lastPrint >= 5000) {
+    if(Serial.availableForWrite() > 0) {
+      Serial.printf("Still running at %lu ms, Heap: %d\n", 
+                   now, ESP.getFreeHeap());
+    }
+    lastPrint = now;
+  }
+  
+  // Small delay to prevent watchdog issues
+  delay(1);
+}
