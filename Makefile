@@ -39,6 +39,8 @@ upload: build
 monitor:
 	$(ARDUINO_CLI) monitor --port $(PORT) --config "baudrate=$(BAUD),dtr=off,rts=off"
 
+try: upload monitor
+
 clean:
 	rm -f $(GEN)
 	rm -rf build/
