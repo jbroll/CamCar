@@ -60,50 +60,18 @@
       </tr>      
     </table>
   
+    <script src="/Camera.js"> </script>
+    <script src="/TankDrive.js"> </script>
     <script>
       var webSocketCameraUrl = "ws://" + window.location.hostname + "/Camera";
       var webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";      
-      var websocketCamera;
       var websocketCarInput;
-      
-      function initCameraWebSocket() {
-        websocketCamera = new WebSocket(webSocketCameraUrl);
-        websocketCamera.binaryType = 'blob';
-        websocketCamera.onopen    = function(event){
-          document.getElementById('connectionStatus').textContent = 'Camera Connected';
-        };
-        websocketCamera.onclose   = function(event){
-          document.getElementById('connectionStatus').textContent = 'Camera Disconnected - Retrying...';
-          setTimeout(initCameraWebSocket, 2000);
-        };
-        websocketCamera.onmessage = function(event) {
-          var imageId = document.getElementById("cameraImage");
-          imageId.src = URL.createObjectURL(event.data);
-        };
-      }
-      
-      function initCarInputWebSocket() {
-        websocketCarInput = new WebSocket(webSocketCarInputUrl);
-        websocketCarInput.onopen    = function(event) {
-          document.getElementById('connectionStatus').textContent = 'Controls Connected';
-          // Initialize slider values after connection established
-          sendButtonInput("Speed", document.getElementById("Speed").value);
-          sendButtonInput("Light", document.getElementById("Light").value);
-          sendButtonInput("Pan", document.getElementById("Pan").value);
-          sendButtonInput("Tilt", document.getElementById("Tilt").value);                    
-        };
-        websocketCarInput.onclose   = function(event){
-          document.getElementById('connectionStatus').textContent = 'Controls Disconnected - Retrying...';
-          setTimeout(initCarInputWebSocket, 2000);
-        };
-        websocketCarInput.onmessage = function(event){};        
-      }
       
       function deferredInit() {
         // Start with car input connection
-        initCarInputWebSocket();
+        websocketCarInput = initCarInputWebSocket();
         // Wait for page to be fully interactive before starting camera
-        setTimeout(initCameraWebSocket, 1000);
+        setTimeout(initCameraWebSocket(webSocketCameraUrl), 1000);
       }
 
       function sendButtonInput(key, value) {
