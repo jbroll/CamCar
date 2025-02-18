@@ -118,7 +118,7 @@ bool CameraHandler::begin() {
     }
 
     setFPS(params.targetFPS);
-    mQualityChangeTime = millis();
+    mQualityChangeTime = micros();
     resetCaptureStats();
 
     // Log final memory state
@@ -133,14 +133,14 @@ float CameraHandler::calculateNetworkSpeed(unsigned long transmitTime, size_t fr
 
     // Convert to KB/s, ensuring floating point division
     float kilobytes = frameSize / 1024.0f;
-    float seconds = transmitTime / 1000.0f;
+    float seconds = transmitTime / 1000.0f / 1000.0f;
     float rate = kilobytes / seconds;
 
     return rate;
 }
 
 bool CameraHandler::sendFrame() {
-    unsigned long now = millis();
+    unsigned long now = micros();
 
     if (mClientId == 0) {
         cleanupFrame();
@@ -163,7 +163,7 @@ bool CameraHandler::sendFrame() {
         }
 
         // Previous transmission complete
-        unsigned long transmitTime = millis() - mTransmitStartTime;
+        unsigned long transmitTime = micros() - mTransmitStartTime;
 
         float kBps = calculateNetworkSpeed(transmitTime, mCurrentFrameSize);
 
@@ -173,7 +173,7 @@ bool CameraHandler::sendFrame() {
     }
 
     // Check frame rate timing
-    unsigned long frameInterval = 1000 / mTargetFPS;
+    unsigned long frameInterval = 1000 * 1000 / mTargetFPS;
     if (now - mLastFrameTime < frameInterval) {
         return false;
     }
@@ -199,7 +199,7 @@ bool CameraHandler::sendFrame() {
 }
 
 void CameraHandler::updateStreamQuality(float measuredKBps) {
-    unsigned long now = millis();
+    unsigned long now = micros();
 
     if (now - mQualityChangeTime < QUALITY_STABILITY_PERIOD) {
         return;
@@ -288,9 +288,9 @@ void CameraHandler::resetCaptureStats() {
 }
 
 bool CameraHandler::handleCaptureFailure() {
-    unsigned long now = millis();
-    mCaptureFailCount++;
+    unsigned long now = micros();
     mLastCaptureFailTime = now;
+    mCaptureFailCount++;
 
     // If we're having persistent failures, downgrade quality
     if (mCaptureFailCount >= MAX_CAPTURE_RETRIES && mCurrentQualityLevel > 0) {
