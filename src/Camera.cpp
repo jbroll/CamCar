@@ -11,10 +11,10 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mCurrentQualityLevel(INITIAL_QUALITY_LEVEL)
     , mQualityChangeTime(0)
     , mTransmissionInProgress(false)
-    , mTransmitStartTime(0)
     , mCurrentFrameSize(0)
     , mCaptureFailCount(0)
     , mLastCaptureFailTime(0)
+    , mLastCongestionCheck(0)
 {
 }
 
@@ -49,8 +49,8 @@ bool CameraHandler::begin() {
 
     // Configure camera
     camera_config_t config;
-    config.ledc_channel = LEDC_CHANNEL_0;  // Changed from 4 to avoid conflicts
-    config.ledc_timer = LEDC_TIMER_0;      // Changed from 2 to match channel
+    config.ledc_channel = LEDC_CHANNEL_0;
+    config.ledc_timer = LEDC_TIMER_0;
     config.pin_d0 = Y2_GPIO_NUM;
     config.pin_d1 = Y3_GPIO_NUM;
     config.pin_d2 = Y4_GPIO_NUM;
@@ -70,19 +70,14 @@ bool CameraHandler::begin() {
     config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
-    static constexpr uint8_t INITIAL_QUALITY_LEVEL =
-        (QUALITY_LEVELS_COUNT > 0) ? (QUALITY_LEVELS_COUNT - 1) / 2 : 0;
-
-    const StreamParameters& params = QUALITY_LEVELS[INITIAL_QUALITY_LEVEL];
+    const StreamParameters& params = QUALITY_LEVELS[mCurrentQualityLevel];
     config.frame_size = params.frameSize;
     config.jpeg_quality = params.jpegQuality;
     config.fb_count = params.fbCount;
 
-    // Log memory state before init
     Serial.printf("Pre-init - Free Heap: %u bytes, Free PSRAM: %u bytes\n",
                  ESP.getFreeHeap(), ESP.getFreePsram());
 
-    // Initialize camera
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
         Serial.printf("Camera init failed with error 0x%x\n", err);
@@ -94,19 +89,14 @@ bool CameraHandler::begin() {
         Serial.println("PSRAM initialized for camera buffering");
     }
 
-    // Configure sensor settings
     sensor_t* s = esp_camera_sensor_get();
     if (s) {
         s->set_framesize(s, params.frameSize);
         s->set_quality(s, params.jpegQuality);
-
-        // Basic settings
         s->set_brightness(s, 1);
         s->set_saturation(s, 0);
         s->set_contrast(s, 0);
         s->set_special_effect(s, 0);
-
-        // Auto settings
         s->set_whitebal(s, 1);
         s->set_awb_gain(s, 1);
         s->set_wb_mode(s, 0);
@@ -118,148 +108,74 @@ bool CameraHandler::begin() {
     }
 
     setFPS(params.targetFPS);
-    mQualityChangeTime = micros();
+    mQualityChangeTime = esp_timer_get_time();
     resetCaptureStats();
 
-    // Log final memory state
     Serial.printf("Post-init - Free Heap: %u bytes, Free PSRAM: %u bytes\n",
                  ESP.getFreeHeap(), ESP.getFreePsram());
 
     return true;
 }
 
-float CameraHandler::calculateNetworkSpeed(unsigned long transmitTime, size_t frameSize) {
-    if (transmitTime == 0 || frameSize == 0) return 0;
-
-    // Convert to KB/s, ensuring floating point division
-    float kilobytes = frameSize / 1024.0f;
-    float seconds = transmitTime / 1000.0f / 1000.0f;
-    float rate = kilobytes / seconds;
-
-    return rate;
-}
-
-bool CameraHandler::sendFrame() {
-    unsigned long now = micros();
-
-    if (mClientId == 0) {
-        cleanupFrame();
-        mTransmissionInProgress = false;
-        return false;
+void CameraHandler::checkCongestion(AsyncWebSocketClient* client) {
+    int64_t now = esp_timer_get_time();
+    
+    // Check congestion every 250ms
+    static const int64_t CHECK_INTERVAL = 250000;
+    if (now - mLastCongestionCheck < CHECK_INTERVAL) {
+        return;
     }
+    mLastCongestionCheck = now;
 
-    AsyncWebSocketClient* client = mWsCamera.client(mClientId);
-    if (!client) {
-        Serial.println("Client disconnected");
-        cleanupFrame();
-        mTransmissionInProgress = false;
-        return false;
-    }
+    // Get current queue depth
+    uint32_t queueDepth = client->queueLen();
 
-    // If a transmission was in progress, check if it's complete
-    if (mTransmissionInProgress) {
-        if (client->queueIsFull()) {
-            return false;
-        }
-
-        // Previous transmission complete
-        unsigned long transmitTime = micros() - mTransmitStartTime;
-
-        float kBps = calculateNetworkSpeed(transmitTime, mCurrentFrameSize);
-
-        mTransmissionInProgress = false;
-        updateStreamQuality(kBps);  // Now safe to update quality
-        cleanupFrame();
-    }
-
-    // Check frame rate timing
-    unsigned long frameInterval = 1000 * 1000 / mTargetFPS;
-    if (now - mLastFrameTime < frameInterval) {
-        return false;
-    }
-
-    // Capture new frame
-    camera_fb_t* fb = esp_camera_fb_get();
-    if (!fb) {
-        Serial.println("Camera capture failed");
-        handleCaptureFailure();
-        return false;
-    }
-
-    // Send the frame
-    mTransmitStartTime = now;
-    mCurrentFrameSize = fb->len;
-    mWsCamera.binary(mClientId, fb->buf, fb->len);
-
-    mPriorFrame = fb;
-    mLastFrameTime = now;
-    mTransmissionInProgress = true;  // Set after everything else is ready
-
-    return true;
-}
-
-void CameraHandler::updateStreamQuality(float measuredKBps) {
-    unsigned long now = micros();
-
-    if (now - mQualityChangeTime < QUALITY_STABILITY_PERIOD) {
+    // Define thresholds for congestion detection
+    static const uint32_t CONGESTION_THRESHOLD = 12;  // Number of buffers that indicates congestion
+    static const uint32_t UPGRADE_THRESHOLD = 4;     // Low queue suggests we can try higher quality
+    
+    // Only consider quality changes after stability period
+    if (now - mQualityChangeTime < QUALITY_STABILITY_PERIOD_MICROS) {
         return;
     }
 
-    const StreamParameters& currentParams = QUALITY_LEVELS[mCurrentQualityLevel];
-    uint8_t newLevel = mCurrentQualityLevel;
-
-    // Check for upgrade possibility first
-    if (now - mQualityChangeTime >= UPGRADE_STABILITY_PERIOD &&
-        mCurrentQualityLevel < (QUALITY_LEVELS_COUNT - 1) &&
-        mCaptureFailCount == 0) {
-
-        const StreamParameters& nextParams = QUALITY_LEVELS[mCurrentQualityLevel + 1];
-        float requiredSpeed = nextParams.minKBps * NETWORK_MARGIN;
-
-        if (measuredKBps > requiredSpeed) {
-            newLevel = mCurrentQualityLevel + 1;
-        }
-    }
-
-    // Check for downgrade if no upgrade
-    if (newLevel == mCurrentQualityLevel && measuredKBps < currentParams.minKBps) {
-        if (mCurrentQualityLevel > 0) {
-            newLevel = mCurrentQualityLevel - 1;
-        }
-    }
-
-    if (newLevel != mCurrentQualityLevel) {
-        const StreamParameters& params = QUALITY_LEVELS[newLevel];
-        Serial.printf("Quality updated - kBps %f Size: %d, Quality: %d, FPS: %d\n",
-                     measuredKBps, (int)params.frameSize, params.jpegQuality, params.targetFPS);
-
+    if (queueDepth > CONGESTION_THRESHOLD && mCurrentQualityLevel > 0) {
+        // Queue building up - reduce quality
+        uint8_t newLevel = mCurrentQualityLevel - 1;
         if (applyQualityLevel(newLevel)) {
+            Serial.printf("Congestion detected (queue=%u) - reducing quality: %d -> %d\n",
+                         queueDepth, mCurrentQualityLevel, newLevel);
             mCurrentQualityLevel = newLevel;
             mQualityChangeTime = now;
-        } else {
-            Serial.println("Quality change failed!");
+        }
+    } else if (queueDepth < UPGRADE_THRESHOLD && 
+               mCurrentQualityLevel < (QUALITY_LEVELS_COUNT - 1) &&
+               mCaptureFailCount == 0 &&
+               (now - mQualityChangeTime) >= UPGRADE_STABILITY_PERIOD_MICROS) {
+        // Queue staying clear - try increasing quality
+        uint8_t newLevel = mCurrentQualityLevel + 1;
+        if (applyQualityLevel(newLevel)) {
+            Serial.printf("Network clear (queue=%u) - increasing quality: %d -> %d\n",
+                         queueDepth, mCurrentQualityLevel, newLevel);
+            mCurrentQualityLevel = newLevel;
+            mQualityChangeTime = now;
         }
     }
 }
 
-// Complete applyQualityLevel method
 bool CameraHandler::applyQualityLevel(uint8_t level) {
-    // Validate level before proceeding
     if (!isValidQualityLevel(level)) {
         Serial.printf("ERROR: Attempted to apply invalid quality level %d\n", level);
         return false;
     }
 
     const StreamParameters& params = QUALITY_LEVELS[level];
-
-    // Get sensor interface
     sensor_t* s = esp_camera_sensor_get();
     if (!s) {
         Serial.println("Failed to get sensor interface");
         return false;
     }
 
-    // Update camera parameters
     esp_err_t err = ESP_OK;
     err |= s->set_framesize(s, params.frameSize);
     err |= s->set_quality(s, params.jpegQuality);
@@ -269,9 +185,7 @@ bool CameraHandler::applyQualityLevel(uint8_t level) {
         return false;
     }
 
-    // Update FPS target
     setFPS(params.targetFPS);
-
     return true;
 }
 
@@ -288,11 +202,10 @@ void CameraHandler::resetCaptureStats() {
 }
 
 bool CameraHandler::handleCaptureFailure() {
-    unsigned long now = micros();
+    int64_t now = esp_timer_get_time();
     mLastCaptureFailTime = now;
     mCaptureFailCount++;
 
-    // If we're having persistent failures, downgrade quality
     if (mCaptureFailCount >= MAX_CAPTURE_RETRIES && mCurrentQualityLevel > 0) {
         uint8_t newLevel = mCurrentQualityLevel - 1;
         if (applyQualityLevel(newLevel)) {
@@ -304,7 +217,78 @@ bool CameraHandler::handleCaptureFailure() {
             return true;
         }
     }
-
     return false;
 }
 
+bool CameraHandler::sendFrame() {
+    if (mClientId == 0) {
+        cleanupFrame();
+        mTransmissionInProgress = false;
+        return false;
+    }
+
+    AsyncWebSocketClient* client = mWsCamera.client(mClientId);
+    if (!client) {
+        Serial.println("Client disconnected");
+        cleanupFrame();
+        mTransmissionInProgress = false;
+        return false;
+    }
+
+    // Check congestion and adjust quality if needed
+    checkCongestion(client);
+
+    // If transmission is in progress, check its status
+    if (mTransmissionInProgress) {
+        if (client->queueLen() <= 2) {  // Nearly empty queue
+            mTransmissionInProgress = false;
+            cleanupFrame();
+        }
+        return false;
+    }
+
+    // Check frame rate timing
+    int64_t now = esp_timer_get_time();
+    int64_t frameInterval = 1000000 / mTargetFPS;
+    if (now - mLastFrameTime < frameInterval) {
+        return false;
+    }
+
+    // Capture new frame
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (!fb) {
+        Serial.println("Camera capture failed");
+        if (handleCaptureFailure()) {
+            Serial.println("Quality downgraded due to capture failure");
+        }
+        return false;
+    }
+
+    // Validate frame
+    if (fb->len == 0 || fb->buf == nullptr) {
+        Serial.println("Invalid frame data");
+        esp_camera_fb_return(fb);
+        return false;
+    }
+
+    // Check client queue
+    if (client->queueIsFull()) {
+        Serial.println("Client queue full, skipping frame");
+        esp_camera_fb_return(fb);
+        return false;
+    }
+
+    // Send frame
+    if (!mWsCamera.binary(mClientId, fb->buf, fb->len)) {
+        Serial.println("Failed to send frame");
+        esp_camera_fb_return(fb);
+        return false;
+    }
+
+    // Update state
+    mPriorFrame = fb;
+    mLastFrameTime = now;
+    mTransmissionInProgress = true;
+
+    return true;
+}

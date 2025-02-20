@@ -5,26 +5,27 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include "esp_timer.h"
-#include "esp_camera.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "CameraParams.h"  // Include this first for StreamParameters definition
+#include "CameraParams.h"
 
 class CameraHandler {
 public:
+    // Public constants
     static constexpr uint8_t MAX_FPS = 30;
     static constexpr uint8_t MIN_FPS = 1;
-
-    // Forward declare the array but don't try to compute its size here
-    static const StreamParameters QUALITY_LEVELS[];
+    static constexpr size_t WS_BUFFER_SIZE = 1460;  // WebSocket frame size
+    static constexpr uint8_t INITIAL_QUALITY_LEVEL = 10;  // Start at middle VGA quality
     
-    // Use externally defined count instead
-    static constexpr uint8_t INITIAL_QUALITY_LEVEL = 7;  // Start at middle VGA quality
+    // Public static data - needed by CameraQuality.h
+    static const StreamParameters QUALITY_LEVELS[];
 
+    // Constructor/Destructor
     explicit CameraHandler(AsyncWebSocket& wsCamera);
     ~CameraHandler();
     
+    // Public methods
     bool begin();
     void setClientId(uint32_t id);
     uint32_t getClientId() const;
@@ -35,7 +36,7 @@ public:
     void cleanupFrame();
 
 private:
-    // Camera GPIO Configuration
+    // Camera GPIO Configuration - static constants
     static constexpr int PWDN_GPIO_NUM = 32;
     static constexpr int RESET_GPIO_NUM = -1;
     static constexpr int XCLK_GPIO_NUM = 0;
@@ -53,35 +54,36 @@ private:
     static constexpr int HREF_GPIO_NUM = 23;
     static constexpr int PCLK_GPIO_NUM = 22;
 
-    // Quality control parameters
-    static constexpr unsigned long QUALITY_STABILITY_PERIOD = 5000; // 20000;
-    static constexpr unsigned long UPGRADE_STABILITY_PERIOD = 10000; // 40000;
-    static constexpr float NETWORK_MARGIN = 1.1f; // 2.00f; 
-    static constexpr uint8_t MAX_CAPTURE_RETRIES = 5; 
-    static constexpr unsigned long CAPTURE_RETRY_DELAY = 250;
+    // Quality control parameters - static constants
+    static constexpr int64_t QUALITY_STABILITY_PERIOD_MICROS = 5000000;  // 5 seconds
+    static constexpr int64_t UPGRADE_STABILITY_PERIOD_MICROS = 10000000; // 10 seconds
+    static constexpr uint8_t MAX_CAPTURE_RETRIES = 5;
 
-    // Member variables
+    // Member variables - WebSocket related
     AsyncWebSocket& mWsCamera;
     uint32_t mClientId;
+    bool mTransmissionInProgress;
+    size_t mCurrentFrameSize;
+
+    // Member variables - Camera related
     camera_fb_t* mPriorFrame;
     uint8_t mTargetFPS;
-    unsigned long mLastFrameTime;
     uint8_t mCurrentQualityLevel;
-    unsigned long mQualityChangeTime;
-    bool mTransmissionInProgress;
-    unsigned long mTransmitStartTime;
-    size_t mCurrentFrameSize;
     uint8_t mCaptureFailCount;
-    unsigned long mLastCaptureFailTime;
 
-    // Quality management methods
-    void updateStreamQuality(float measuredKBps);
+    // Member variables - Timing
+    int64_t mLastFrameTime;
+    int64_t mQualityChangeTime;
+    int64_t mLastCaptureFailTime;
+    int64_t mLastCongestionCheck;
+
+    // Private methods
+    void checkCongestion(AsyncWebSocketClient* client);
     bool applyQualityLevel(uint8_t level);
-    float calculateNetworkSpeed(unsigned long transmitTime, size_t frameSize);
     bool handleCaptureFailure();
     void resetCaptureStats();
     
-    // Bounds checking helper
+    // Helper methods
     bool isValidQualityLevel(uint8_t level) const {
         return level < QUALITY_LEVELS_COUNT;
     }
