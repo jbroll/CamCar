@@ -1,98 +1,258 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <link rel="stylesheet" href="/style.css">
-  </head>
-  <body class="noselect" align="center" style="background-color:white">
-    <div id="connectionStatus">Connecting...</div>
-    <table id="mainTable" style="width:400px;margin:auto;table-layout:fixed" CELLSPACING=10>
-      <tr>
-        <img id="cameraImage" src="" style="width:400px;height:250px"></td>
-      </tr> 
-      <tr>
-        <td></td>
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","1")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >&#8679;</span></td>
-        <td></td>
-      </tr>
-      <tr>
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","3")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >&#8678;</span></td>
-        <td class="button"></td>    
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","4")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >&#8680;</span></td>
-      </tr>
-      <tr>
-        <td></td>
-        <td class="button" ontouchstart='sendButtonInput("MoveCar","2")' ontouchend='sendButtonInput("MoveCar","0")'><span class="arrows" >&#8681;</span></td>
-        <td></td>
-      </tr>
-      <tr/><tr/>
-      <tr>
-        <td style="text-align:left"><b>Speed:</b></td>
-        <td colspan=2>
-         <div class="slidecontainer">
-            <input type="range" min="0" max="255" value="150" class="slider" id="Speed" oninput='sendButtonInput("Speed",value)'>
-          </div>
-        </td>
-      </tr>        
-      <tr>
-        <td style="text-align:left"><b>Light:</b></td>
-        <td colspan=2>
-          <div class="slidecontainer">
-            <input type="range" min="0" max="255" value="0" class="slider" id="Light" oninput='sendButtonInput("Light",value)'>
-          </div>
-        </td>   
-      </tr>
-      <tr>
-        <td style="text-align:left"><b>Pan:</b></td>
-        <td colspan=2>
-         <div class="slidecontainer">
-            <input type="range" min="0" max="180" value="90" class="slider" id="Pan" oninput='sendButtonInput("Pan",value)'>
-          </div>
-        </td>
-      </tr> 
-      <tr>
-        <td style="text-align:left"><b>Tilt:</b></td>
-        <td colspan=2>
-          <div class="slidecontainer">
-            <input type="range" min="0" max="180" value="90" class="slider" id="Tilt" oninput='sendButtonInput("Tilt",value)'>
-          </div>
-        </td>   
-      </tr>      
-    </table>
-  
-    <script src="/Camera.js"> </script>
-    <script src="/TankDrive.js"> </script>
-    <script>
-      var webSocketCameraUrl = "ws://" + window.location.hostname + "/Camera";
-      var webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";      
-      var websocketCarInput;
-      
-      function deferredInit() {
-        // Start with car input connection
-        websocketCarInput = initCarInputWebSocket();
-        // Wait for page to be fully interactive before starting camera
-        setTimeout(initCameraWebSocket(webSocketCameraUrl), 1000);
-      }
-
-      function sendButtonInput(key, value) {
-        if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
-          var data = key + "," + value;
-          websocketCarInput.send(data);
+    <title>CamCar Control</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #000;
+            font-family: Arial, sans-serif;
         }
-      }
-    
-      // Defer WebSocket initialization until after page is fully loaded
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-          setTimeout(deferredInit, 500);
-        });
-      } else {
-        setTimeout(deferredInit, 500);
-      }
 
-      document.getElementById("mainTable").addEventListener("touchend", function(event){
-        event.preventDefault()
-      });      
+        #videoContainer {
+            width: 100%;
+            height: 66vh;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #cameraImage {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        #controlsContainer {
+            width: 100%;
+            height: 34vh;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            margin-top: -20vh; /* Overlap with video */
+        }
+
+        .joystick-container {
+            width: 40vw;
+            height: 40vw;
+            max-height: 40vh;
+            position: relative;
+        }
+
+        .joystick-base {
+            width: 100%;
+            height: 100%;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .joystick-thumb {
+            width: 30%;
+            height: 30%;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            position: absolute;
+            top: 35%;
+            left: 35%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        #connectionStatus {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            padding: 5px 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="connectionStatus">Connecting...</div>
+    
+    <div id="videoContainer">
+        <img id="cameraImage" src="" alt="Camera Stream">
+    </div>
+
+    <div id="controlsContainer">
+        <div id="motionJoystick" class="joystick-container">
+            <div class="joystick-base"></div>
+            <div class="joystick-thumb"></div>
+        </div>
+        <div id="cameraPanTilt" class="joystick-container">
+            <div class="joystick-base"></div>
+            <div class="joystick-thumb"></div>
+        </div>
+    </div>
+
+    <script>
+        class Joystick {
+            constructor(container, onChange) {
+                this.container = container;
+                this.thumb = container.querySelector('.joystick-thumb');
+                this.base = container.querySelector('.joystick-base');
+                this.onChange = onChange;
+                this.active = false;
+                this.centerX = 0;
+                this.centerY = 0;
+                this.maxDistance = 0;
+                this.currentX = 0;
+                this.currentY = 0;
+
+                this.init();
+            }
+
+            init() {
+                // Calculate center and max distance
+                const rect = this.base.getBoundingClientRect();
+                this.centerX = rect.width / 2;
+                this.centerY = rect.height / 2;
+                this.maxDistance = rect.width / 2 - this.thumb.clientWidth / 2;
+
+                // Touch events
+                this.container.addEventListener('touchstart', (e) => this.handleStart(e));
+                document.addEventListener('touchmove', (e) => this.handleMove(e));
+                document.addEventListener('touchend', (e) => this.handleEnd(e));
+
+                // Mouse events
+                this.container.addEventListener('mousedown', (e) => this.handleStart(e));
+                document.addEventListener('mousemove', (e) => this.handleMove(e));
+                document.addEventListener('mouseup', (e) => this.handleEnd(e));
+            }
+
+            handleStart(e) {
+                e.preventDefault();
+                const touch = e.type === 'mousedown' ? e : e.touches[0];
+                if (touch.target === this.thumb || touch.target === this.base) {
+                    this.active = true;
+                    this.container.style.opacity = '1';
+                }
+            }
+
+            handleMove(e) {
+                if (!this.active) return;
+                e.preventDefault();
+                
+                const touch = e.type === 'mousemove' ? e : e.touches[0];
+                const rect = this.base.getBoundingClientRect();
+                
+                let x = touch.clientX - rect.left;
+                let y = touch.clientY - rect.top;
+
+                // Calculate distance from center
+                const deltaX = x - this.centerX;
+                const deltaY = y - this.centerY;
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+                // If distance is greater than max, scale it down
+                if (distance > this.maxDistance) {
+                    x = this.centerX + (deltaX / distance) * this.maxDistance;
+                    y = this.centerY + (deltaY / distance) * this.maxDistance;
+                }
+
+                // Update thumb position
+                this.thumb.style.left = `${x - this.thumb.clientWidth / 2}px`;
+                this.thumb.style.top = `${y - this.thumb.clientHeight / 2}px`;
+
+                // Calculate normalized values (-100 to 100)
+                this.currentX = Math.round((x - this.centerX) / this.maxDistance * 100);
+                this.currentY = Math.round((y - this.centerY) / this.maxDistance * -100); // Invert Y axis
+
+                if (this.onChange) {
+                    this.onChange(this.currentX, this.currentY);
+                }
+            }
+
+            handleEnd(e) {
+                if (!this.active) return;
+                e.preventDefault();
+                this.active = false;
+                this.container.style.opacity = '0.7';
+
+                // Reset thumb position
+                this.thumb.style.left = '35%';
+                this.thumb.style.top = '35%';
+                this.currentX = 0;
+                this.currentY = 0;
+
+                if (this.onChange) {
+                    this.onChange(0, 0);
+                }
+            }
+        }
+
+        // Initialize joysticks
+        const motionJoystick = new Joystick(
+            document.getElementById('motionJoystick'),
+            (x, y) => {
+                if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
+                    websocketCarInput.send(`tank ${x} ${y}`);
+                }
+            }
+        );
+
+        const cameraPanTilt = new Joystick(
+            document.getElementById('cameraPanTilt'),
+            (x, y) => {
+                if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
+                    websocketCarInput.send(`camr  ${x} ${y}`);
+                }
+            }
+        );
+
+        // WebSocket initialization
+        var webSocketCameraUrl = "ws://" + window.location.hostname + "/Camera";
+        var webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";
+        var websocketCamera;
+        var websocketCarInput;
+
+        function initCameraWebSocket() {
+            websocketCamera = new WebSocket(webSocketCameraUrl);
+            websocketCamera.binaryType = 'blob';
+            websocketCamera.onopen = function(event) {
+                document.getElementById('connectionStatus').textContent = 'Camera Connected';
+            };
+            websocketCamera.onclose = function(event) {
+                document.getElementById('connectionStatus').textContent = 'Camera Disconnected - Retrying...';
+                setTimeout(initCameraWebSocket, 2000);
+            };
+            websocketCamera.onmessage = function(event) {
+                document.getElementById("cameraImage").src = URL.createObjectURL(event.data);
+            };
+        }
+
+        function initCarInputWebSocket() {
+            websocketCarInput = new WebSocket(webSocketCarInputUrl);
+            websocketCarInput.onopen = function(event) {
+                document.getElementById('connectionStatus').textContent = 'Controls Connected';
+            };
+            websocketCarInput.onclose = function(event) {
+                document.getElementById('connectionStatus').textContent = 'Controls Disconnected - Retrying...';
+                setTimeout(initCarInputWebSocket, 2000);
+            };
+        }
+
+        // Initialize WebSocket connections
+        window.onload = function() {
+            initCameraWebSocket();
+            initCarInputWebSocket();
+        };
     </script>
-  </body>    
+</body>
 </html>
