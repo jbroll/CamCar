@@ -7,10 +7,21 @@
 
 class PrefEdit {
 public:
-    static bool begin(AsyncWebServer* server, const char* endpoint, 
+    // Open the NVS-backed config store. Safe to call before the web server
+    // exists (e.g. to read WiFi credentials during boot) and idempotent --
+    // begin() calls it too if it hasn't run yet.
+    static bool initStorage() {
+        if (_inited) {
+            return true;
+        }
+        _inited = _prefs.begin("config", false);
+        return _inited;
+    }
+
+    static bool begin(AsyncWebServer* server, const char* endpoint,
                      const char** paramArray) {
-        
-        if (!_prefs.begin("config", false)) {
+
+        if (!initStorage()) {
             return false;
         }
 
@@ -18,8 +29,21 @@ public:
         _server = server;
         _server->on(endpoint, HTTP_POST, handleUpdate);
         FileSystem::registerProcessor(endpoint, processor);
-        
+
         return true;
+    }
+
+    // Read a stored config value (returns def if unset). Public so boot code
+    // can read credentials before the server is up; requires initStorage().
+    static String get(const char* key, const String& def = "") {
+        return _prefs.getString(key, def);
+    }
+
+    // Write a stored config value. Public so boot code can seed defaults
+    // (e.g. from build-time .env) before the server is up; requires
+    // initStorage().
+    static void set(const char* key, const String& value) {
+        _prefs.putString(key, value);
     }
 
     static String processor(const String& var) {
@@ -27,37 +51,61 @@ public:
     }
 
     static void handleUpdate(AsyncWebServerRequest* request) {
-        bool changed = false;
-        
+        bool wifiChanged = false;
+
         // Check each parameter for changes
         for (const char** param = _params; *param != nullptr; param++) {
             if (request->hasParam(*param, true)) {
                 const AsyncWebParameter* p = request->getParam(*param, true);
                 String newValue = p->value();
                 String currentValue = getValue(*param);
-                
+
                 if (newValue != currentValue) {
                     setValue(*param, newValue.c_str());
-                    changed = true;
+                    if (strcmp(*param, "ssid") == 0 ||
+                        strcmp(*param, "password") == 0) {
+                        wifiChanged = true;
+                    }
                 }
             }
         }
-        
-        // Redirect back to the configuration page
-        request->redirect(request->url());
+
+        if (wifiChanged) {
+            // New WiFi credentials only take effect on reconnect, so reboot.
+            // Defer it (see loop()) so this response can flush first.
+            _rebootAt = millis() + REBOOT_DELAY_MS;
+            request->send(200, "text/html",
+                "<html><body><h1>Saved</h1>"
+                "<p>Rebooting to apply WiFi settings...</p></body></html>");
+        } else {
+            // Redirect back to the configuration page
+            request->redirect(request->url());
+        }
+    }
+
+    // Call from the main loop(): performs a deferred reboot after WiFi
+    // credentials change, giving the HTTP response time to flush.
+    static void loop() {
+        if (_rebootAt != 0 && millis() >= _rebootAt) {
+            ESP.restart();
+        }
     }
 
 private:
+    static constexpr unsigned long REBOOT_DELAY_MS = 1000;
+
     static AsyncWebServer* _server;
     static Preferences _prefs;
     static const char** _params;
-    
+    static bool _inited;
+    static unsigned long _rebootAt;
+
     static String getValue(const char* param) {
-        return _prefs.getString(param, "");
+        return get(param);
     }
 
     static void setValue(const char* param, const char* value) {
-        _prefs.putString(param, value);
+        set(param, value);
     }
 };
 
@@ -65,5 +113,7 @@ private:
 AsyncWebServer* PrefEdit::_server = nullptr;
 const char** PrefEdit::_params = nullptr;
 Preferences PrefEdit::_prefs;
+bool PrefEdit::_inited = false;
+unsigned long PrefEdit::_rebootAt = 0;
 
 #endif

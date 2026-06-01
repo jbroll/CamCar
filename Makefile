@@ -18,6 +18,8 @@ WEBROOT_FILES := $(wildcard $(WEBROOT)/*)
 GEN=src/gen
 GEN_FILES := $(patsubst $(WEBROOT)/%, $(GEN)/%_file.cpp, $(WEBROOT_FILES))
 GEN_ENTRIES := $(GEN)/file-entries.cpp
+ENV_FILE := .env
+GEN_SECRETS := $(GEN)/secrets.h
 
 .PHONY: all clean build install upload monitor tester venv clean-venv
 
@@ -26,9 +28,9 @@ all: build
 install:
 	$(ARDUINO_CLI) core update-index
 	$(ARDUINO_CLI) core install esp32:esp32
-	$(ARDUINO_CLI) -cli lib install ESP32Servo
-	$(ARDUINO_CLI) -cli lib install --git-url https://github.com/me-no-dev/ESPAsyncWebServer
-	$(ARDUINO_CLI) -cli lib install --git-url https://github.com/me-no-dev/AsyncTCP
+	$(ARDUINO_CLI) lib install ESP32Servo
+	$(ARDUINO_CLI) lib install "Async TCP"
+	$(ARDUINO_CLI) lib install "ESP Async WebServer"
 
 build: gen-sources
 	$(ARDUINO_CLI) compile --fqbn $(BOARD) -e $(INO_FILE)
@@ -59,7 +61,12 @@ $(GEN)/%_file.cpp: $(WEBROOT)/% | $(GEN)
 $(GEN_ENTRIES): $(GEN_FILES)
 	./file-system.sh
 
-gen-sources: $(GEN_FILES) $(GEN_ENTRIES)
+# Regenerate when .env changes; with no .env present this builds once with
+# empty credential defaults (firmware then falls back to SoftAP setup mode).
+$(GEN_SECRETS): $(wildcard $(ENV_FILE)) | $(GEN)
+	./gen-secrets.sh
+
+gen-sources: $(GEN_FILES) $(GEN_ENTRIES) $(GEN_SECRETS)
 
 tester: $(VENV)/bin/activate
 	(. $(VENV)/bin/activate; ./tester.py)

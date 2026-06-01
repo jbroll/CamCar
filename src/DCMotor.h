@@ -16,12 +16,11 @@ public:
         pinMode(mPinA, OUTPUT);
         pinMode(mPinB, OUTPUT);
         
-        // Configure ESP32 PWM
+        // Configure ESP32 PWM (pin-based ledc API, core 3.x)
         // Using higher frequency for smoother motor operation
-        ledcSetup(mPwmChannel, 20000, 8);  // 20kHz, 8-bit resolution
-        ledcAttachPin(mPinA, mPwmChannel);
-        ledcAttachPin(mPinB, mPwmChannel + 1);
-        
+        ledcAttach(mPinA, 20000, 8);  // 20kHz, 8-bit resolution
+        ledcAttach(mPinB, 20000, 8);
+
         stop();
     }
 
@@ -31,13 +30,13 @@ public:
         
         if (mCurrentSpeed > 0) {
             // Forward
-            ledcWrite(mPwmChannel, map(mCurrentSpeed, 0, 100, 0, 255));
-            ledcWrite(mPwmChannel + 1, 0);
+            ledcWrite(mPinA, map(mCurrentSpeed, 0, 100, 0, 255));
+            ledcWrite(mPinB, 0);
         }
         else if (mCurrentSpeed < 0) {
             // Reverse
-            ledcWrite(mPwmChannel, 0);
-            ledcWrite(mPwmChannel + 1, map(-mCurrentSpeed, 0, 100, 0, 255));
+            ledcWrite(mPinA, 0);
+            ledcWrite(mPinB, map(-mCurrentSpeed, 0, 100, 0, 255));
         }
         else {
             // Stop
@@ -48,15 +47,15 @@ public:
     // Stop motor (coast)
     void stop() {
         mCurrentSpeed = 0;
-        ledcWrite(mPwmChannel, 0);
-        ledcWrite(mPwmChannel + 1, 0);
+        ledcWrite(mPinA, 0);
+        ledcWrite(mPinB, 0);
     }
 
     // Brake motor (short both pins to ground)
     void brake() {
         mCurrentSpeed = 0;
-        ledcWrite(mPwmChannel, 255);
-        ledcWrite(mPwmChannel + 1, 255);
+        ledcWrite(mPinA, 255);
+        ledcWrite(mPinB, 255);
     }
 
     // Get current speed (-100 to +100)
@@ -67,12 +66,7 @@ public:
 private:
     const uint8_t mPinA;
     const uint8_t mPinB;
-    static uint8_t sNextPwmChannel;
-    const uint8_t mPwmChannel = sNextPwmChannel++;
     int8_t mCurrentSpeed;
 };
-
-// Initialize static member
-uint8_t DCMotor::sNextPwmChannel = 0;
 
 #endif // DC_MOTOR_H

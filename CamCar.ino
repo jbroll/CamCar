@@ -8,6 +8,7 @@
 #include <ESP32Servo.h>
 
 #include "./Prefs.h"
+#include "src/gen/secrets.h"
 
 #include "src/Camera.h"
 
@@ -118,7 +119,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
     case WS_EVT_DISCONNECT:
       Serial.printf("WebSocket client #%u disconnected\n", client->id());
       moveCar(0);
-      ledcWrite(PWMLightChannel, 0); 
+      ledcWrite(LIGHT_PIN, 0);
       panServo.write(90);
       tiltServo.write(90);       
       break;
@@ -138,9 +139,9 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
         if (key == "MoveCar") {
           moveCar(valueInt);        
         } else if (key == "Speed") {
-          ledcWrite(PWMSpeedChannel, valueInt);
+          ledcWrite(motorPins[RIGHT_MOTOR].pinEn, valueInt);
         } else if (key == "Light") {
-          ledcWrite(PWMLightChannel, valueInt);         
+          ledcWrite(LIGHT_PIN, valueInt);
         } else if (key == "Pan") {
           panServo.write(valueInt);
         } else if (key == "Tilt") {
@@ -184,25 +185,89 @@ void setUpPinModes() {
   panServo.attach(PAN_PIN);
   tiltServo.attach(TILT_PIN);
 
-  //Set up PWM
-  ledcSetup(PWMSpeedChannel, PWMFreq, PWMResolution);
-  ledcSetup(PWMLightChannel, PWMFreq, PWMResolution);
-      
   for (int i = 0; i < motorPins.size(); i++) {
-    pinMode(motorPins[i].pinEn, OUTPUT);    
+    pinMode(motorPins[i].pinEn, OUTPUT);
     pinMode(motorPins[i].pinIN1, OUTPUT);
-    pinMode(motorPins[i].pinIN2, OUTPUT);  
-    /* Attach the PWM Channel to the motor enb Pin */
-    ledcAttachPin(motorPins[i].pinEn, PWMSpeedChannel);
+    pinMode(motorPins[i].pinIN2, OUTPUT);
   }
+
+  // Both motor enable pins are wired to the same GPIO, so a single PWM
+  // channel drives the shared speed signal. (esp32 core 3.x ledc API is
+  // pin-based; ledcAttachChannel pins an explicit channel to avoid the
+  // camera's LEDC channel 0.)
+  ledcAttachChannel(motorPins[RIGHT_MOTOR].pinEn, PWMFreq, PWMResolution, PWMSpeedChannel);
   moveCar(STOP);
 
-  pinMode(LIGHT_PIN, OUTPUT);    
-  ledcAttachPin(LIGHT_PIN, PWMLightChannel);
+  pinMode(LIGHT_PIN, OUTPUT);
+  ledcAttachChannel(LIGHT_PIN, PWMFreq, PWMResolution, PWMLightChannel);
 }
 
 #define STATUS_LED 33  // Built-in status LED
 #define FLASH_LED 4    // Flash/torch LED
+
+// WiFi connection behaviour
+#define WIFI_CONNECT_TIMEOUT_MS 15000  // give up on a stored network after this
+#define WIFI_CONNECT_BLINK_MS   500    // status LED toggle / poll interval
+const char* SETUP_AP_SSID = "CamCar-setup";
+const char* SETUP_AP_PASSWORD = "camcarsetup";  // must be >= 8 chars (WPA2)
+
+// Bring up a SoftAP so credentials can be entered at
+// http://192.168.4.1/config when there is no usable station network.
+void startSetupAP() {
+  WiFi.mode(WIFI_AP);
+  if (!WiFi.softAP(SETUP_AP_SSID, SETUP_AP_PASSWORD)) {
+    Serial.println("Failed to start setup access point!");
+    return;
+  }
+  Serial.printf("Setup AP started. SSID: %s  Password: %s\n",
+                SETUP_AP_SSID, SETUP_AP_PASSWORD);
+  Serial.print("Open http://");
+  Serial.print(WiFi.softAPIP());
+  Serial.println("/config to set WiFi credentials.");
+}
+
+// Read WiFi credentials from NVS (seeded from build-time .env defaults on
+// first boot) and join as a station. With no stored SSID, or if the join
+// times out, fall back to the setup SoftAP instead of blocking forever.
+void setupWiFi() {
+  PrefEdit::initStorage();
+
+  // First boot: seed NVS from compile-time defaults if .env provided any.
+  if (PrefEdit::get("ssid").length() == 0 && strlen(WIFI_SSID_DEFAULT) > 0) {
+    PrefEdit::set("ssid", WIFI_SSID_DEFAULT);
+    PrefEdit::set("password", WIFI_PASSWORD_DEFAULT);
+    Serial.println("Seeded WiFi credentials from build-time defaults.");
+  }
+
+  String ssid = PrefEdit::get("ssid");
+  String password = PrefEdit::get("password");
+
+  if (ssid.length() == 0) {
+    Serial.println("No WiFi credentials stored; starting setup AP.");
+    startSetupAP();
+    return;
+  }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), password.c_str());
+  Serial.printf("Connecting to WiFi network '%s' ", ssid.c_str());
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         (millis() - start) < WIFI_CONNECT_TIMEOUT_MS) {
+    digitalWrite(STATUS_LED, !digitalRead(STATUS_LED));  // Toggle LED
+    Serial.print(".");
+    delay(WIFI_CONNECT_BLINK_MS);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("\nConnected to the WiFi network at ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWiFi connection timed out; starting setup AP.");
+    startSetupAP();
+  }
+}
 
 void setup(void) {
   setUpPinModes();
@@ -217,40 +282,7 @@ void setup(void) {
   Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
   Serial.printf("Flash Size: %d bytes\n", ESP.getFlashChipSize());
 
-  const boolean AP = false;
-# define WIFI_CONNECT_DELAY 500
-
-  if ( AP ) {
-      const char* ssid = "CamCar";
-      const char* password = "REDACTED_AP_PASSWORD";
-
-      if ( !WiFi.softAP(ssid, password)) {
-          Serial.println("Failed to create WiFi access point!");
-      }
-
-      Serial.printf("AP SSID: %s\n", WiFi.softAPSSID().c_str());
-      Serial.printf("AP Password: %s\n", password);
-      Serial.printf("AP Channel: %d\n", WiFi.channel());
-      Serial.printf("AP Max Connections: %d\n", WiFi.softAPgetStationNum());
-      Serial.printf("AP IP address:");
-      Serial.println(WiFi.softAPIP());
-  } else {
-      const char* ssid = "REDACTED_SSID";
-      const char* password = "REDACTED_WIFI_PASSWORD";
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    Serial.println("\nConnecting to WiFi Network ..");
-
-    while(WiFi.status() != WL_CONNECTED){
-      digitalWrite(STATUS_LED, !digitalRead(STATUS_LED));  // Toggle LED
-      Serial.print(".");
-      delay(WIFI_CONNECT_DELAY);
-    }
-
-    Serial.printf("\nConnected to the WiFi network at ");
-    Serial.println(WiFi.localIP());
-  }
+  setupWiFi();
 
   PrefEdit::begin(&server, "/config", configParams);
   WebHandler::begin(server);
@@ -280,8 +312,10 @@ void loop() {
   //digitalWrite(FLASH_LED, HIGH);
   //delay(1000);
 
-  wsCamera.cleanupClients(); 
-  wsCarInput.cleanupClients(); 
+  PrefEdit::loop();
+
+  wsCamera.cleanupClients();
+  wsCarInput.cleanupClients();
 
   if ( !camera.sendFrame() ) {
       delay(1); 

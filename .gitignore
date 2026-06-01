@@ -4,5 +4,9 @@ error.log
 
 build/
 venv/
+__pycache__/
+
+.env
+src/gen/
 
 .*.swp
