@@ -7,7 +7,7 @@ VENV := venv
 PYTHON_VENV := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-BOARD=esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M
+BOARD=esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app
 PORT=/dev/ttyACM0
 BAUD=115200
 
