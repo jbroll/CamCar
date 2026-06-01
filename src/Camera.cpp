@@ -75,6 +75,11 @@ bool CameraHandler::begin() {
     config.jpeg_quality = params.jpegQuality;
     config.fb_count = params.fbCount;
 
+    // Place the frame buffer in PSRAM (8MB on this board); required for VGA
+    // JPEG. fb_location/grab_mode were previously left uninitialized.
+    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+
     Serial.printf("Pre-init - Free Heap: %u bytes, Free PSRAM: %u bytes\n",
                  ESP.getFreeHeap(), ESP.getFreePsram());
 
