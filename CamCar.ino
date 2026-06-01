@@ -9,15 +9,13 @@
 
 #include "./Prefs.h"
 #include "src/gen/secrets.h"
+#include "src/board_config.h"
 
 #include "src/Camera.h"
 
 #include "src/PrefEdit.h"
 #include "src/WebHandler.h"
 #include "src/TankDrive.h"
-
-#define PAN_PIN 14
-#define TILT_PIN 15
 
 Servo panServo;
 Servo tiltServo;
@@ -29,10 +27,9 @@ struct MOTOR_PINS {
 };
 
 std::vector<MOTOR_PINS> motorPins = {
-  {2, 12, 13}, //RIGHT_MOTOR Pins (EnA, IN1, IN2)
-  {2, 1, 3},  //LEFT_MOTOR  Pins (EnB, IN3, IN4)
+  {MOTOR_SPEED_PIN, RIGHT_MOTOR_IN1, RIGHT_MOTOR_IN2}, //RIGHT_MOTOR (EnA, IN1, IN2)
+  {MOTOR_SPEED_PIN, LEFT_MOTOR_IN1,  LEFT_MOTOR_IN2},  //LEFT_MOTOR  (EnB, IN3, IN4)
 };
-#define LIGHT_PIN 4
 
 #define UP 1
 #define DOWN 2
@@ -201,9 +198,6 @@ void setUpPinModes() {
   pinMode(LIGHT_PIN, OUTPUT);
   ledcAttachChannel(LIGHT_PIN, PWMFreq, PWMResolution, PWMLightChannel);
 }
-
-#define STATUS_LED 33  // Built-in status LED
-#define FLASH_LED 4    // Flash/torch LED
 
 // WiFi connection behaviour
 #define WIFI_CONNECT_TIMEOUT_MS 15000  // give up on a stored network after this
