@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "CameraParams.h"
+#include "board_config.h"
 
 class CameraHandler {
 public:
@@ -36,23 +37,23 @@ public:
     void cleanupFrame();
 
 private:
-    // Camera GPIO Configuration - static constants
-    static constexpr int PWDN_GPIO_NUM = 32;
-    static constexpr int RESET_GPIO_NUM = -1;
-    static constexpr int XCLK_GPIO_NUM = 0;
-    static constexpr int SIOD_GPIO_NUM = 26;
-    static constexpr int SIOC_GPIO_NUM = 27;
-    static constexpr int Y9_GPIO_NUM = 35;
-    static constexpr int Y8_GPIO_NUM = 34;
-    static constexpr int Y7_GPIO_NUM = 39;
-    static constexpr int Y6_GPIO_NUM = 36;
-    static constexpr int Y5_GPIO_NUM = 21;
-    static constexpr int Y4_GPIO_NUM = 19;
-    static constexpr int Y3_GPIO_NUM = 18;
-    static constexpr int Y2_GPIO_NUM = 5;
-    static constexpr int VSYNC_GPIO_NUM = 25;
-    static constexpr int HREF_GPIO_NUM = 23;
-    static constexpr int PCLK_GPIO_NUM = 22;
+    // Camera GPIO Configuration - from board_config.h
+    static constexpr int PWDN_GPIO_NUM = CAM_PIN_PWDN;
+    static constexpr int RESET_GPIO_NUM = CAM_PIN_RESET;
+    static constexpr int XCLK_GPIO_NUM = CAM_PIN_XCLK;
+    static constexpr int SIOD_GPIO_NUM = CAM_PIN_SIOD;
+    static constexpr int SIOC_GPIO_NUM = CAM_PIN_SIOC;
+    static constexpr int Y9_GPIO_NUM = CAM_PIN_D7;
+    static constexpr int Y8_GPIO_NUM = CAM_PIN_D6;
+    static constexpr int Y7_GPIO_NUM = CAM_PIN_D5;
+    static constexpr int Y6_GPIO_NUM = CAM_PIN_D4;
+    static constexpr int Y5_GPIO_NUM = CAM_PIN_D3;
+    static constexpr int Y4_GPIO_NUM = CAM_PIN_D2;
+    static constexpr int Y3_GPIO_NUM = CAM_PIN_D1;
+    static constexpr int Y2_GPIO_NUM = CAM_PIN_D0;
+    static constexpr int VSYNC_GPIO_NUM = CAM_PIN_VSYNC;
+    static constexpr int HREF_GPIO_NUM = CAM_PIN_HREF;
+    static constexpr int PCLK_GPIO_NUM = CAM_PIN_PCLK;
 
     // Quality control parameters - static constants
     static constexpr int64_t QUALITY_STABILITY_PERIOD_MICROS = 5000000;  // 5 seconds
