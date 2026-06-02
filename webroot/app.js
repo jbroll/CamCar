@@ -149,7 +149,17 @@ window.onload = function () {
         if (websocketCarInput) websocketCarInput.send("Quality," + this.value);
     });
 
-    document.getElementById("xclkSelect").addEventListener("change", function () {
+    // Populate the XCLK menu at 0.5 MHz steps (8.0 .. 20.0); the device's
+    // current value arrives via the "xclk" status frame and selects the match.
+    var xsel = document.getElementById("xclkSelect");
+    for (var f = 8; f <= 20.0001; f += 0.5) {
+        var v = f.toFixed(1);
+        var o = document.createElement("option");
+        o.value = v; o.textContent = "XCLK " + v;
+        if (v === "8.0") o.selected = true;
+        xsel.appendChild(o);
+    }
+    xsel.addEventListener("change", function () {
         if (websocketCarInput) websocketCarInput.send("Xclk," + this.value);
     });
 

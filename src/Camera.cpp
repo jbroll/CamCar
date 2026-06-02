@@ -1,10 +1,11 @@
 #include "Camera.h"
 #include <WiFi.h>
 
-// Auto-tune candidate XCLKs (MHz). Integer steps: the clean bands are ~1 MHz
-// wide so an integer always lands inside (see the XCLK lesson).
-static const uint8_t SCAN_FREQS[] = {8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
-static constexpr uint8_t SCAN_COUNT = sizeof(SCAN_FREQS) / sizeof(SCAN_FREQS[0]);
+// Auto-tune candidates: 8.0 .. 20.0 MHz in 0.5 steps. Half-MHz resolution so the
+// scan finds a clean band even when it's centered on a half-MHz (the band
+// positions are per-channel; see the XCLK lesson). mhz(i) = 8.0 + 0.5*i.
+static constexpr uint8_t SCAN_COUNT = 25;
+static inline float scanFreqMhz(uint8_t i) { return 8.0f + 0.5f * i; }
 static constexpr int64_t SCAN_SETTLE_US = 1000000;  // 1.0s settle after each XCLK change
 static constexpr int64_t SCAN_WINDOW_US = 2000000;  // 2.0s measurement window
 
@@ -253,9 +254,9 @@ void CameraHandler::startScan() {
     mScanDone = false;
     mScanIdx = 0;
     mScanBestFps = -1.0f;
-    mScanBestMhz = SCAN_FREQS[0];
+    mScanBestMhz = scanFreqMhz(0);
     mScanMeasuring = false;
-    mScanPhaseStart = 0;            // 0 => apply SCAN_FREQS[mScanIdx] on next tick
+    mScanPhaseStart = 0;            // 0 => apply the current candidate on next tick
     AsyncWebSocketClient* c = mWsCamera.client(mClientId);
     if (c) c->text("scanstart");
     Serial.println("[scan] started");
@@ -266,7 +267,7 @@ void CameraHandler::scanTick() {
     int64_t now = esp_timer_get_time();
 
     if (mScanPhaseStart == 0) {     // apply the current candidate (loop context)
-        mXclkFreq = (uint32_t)SCAN_FREQS[mScanIdx] * 1000000UL;
+        mXclkFreq = (uint32_t)(scanFreqMhz(mScanIdx) * 1000000.0f);
         initSensor();
         mScanPhaseStart = esp_timer_get_time();
         mScanMeasuring = false;
@@ -283,10 +284,10 @@ void CameraHandler::scanTick() {
     if (now - mScanMeasureStart < SCAN_WINDOW_US) return;   // still measuring
 
     float fps = (mDeliveredFrames - mScanFrameMark) * 1000000.0f / (now - mScanMeasureStart);
-    uint8_t mhz = SCAN_FREQS[mScanIdx];
+    float mhz = scanFreqMhz(mScanIdx);
     AsyncWebSocketClient* c = mWsCamera.client(mClientId);
-    if (c) { char b[32]; snprintf(b, sizeof(b), "scan %u %.1f", mhz, fps); c->text(b); }
-    Serial.printf("[scan] %u MHz -> %.1f fps\n", mhz, fps);
+    if (c) { char b[32]; snprintf(b, sizeof(b), "scan %.1f %.1f", mhz, fps); c->text(b); }
+    Serial.printf("[scan] %.1f MHz -> %.1f fps\n", mhz, fps);
     if (fps > mScanBestFps) { mScanBestFps = fps; mScanBestMhz = mhz; }
 
     if (++mScanIdx >= SCAN_COUNT) { finishScan(); return; }
@@ -294,14 +295,14 @@ void CameraHandler::scanTick() {
 }
 
 void CameraHandler::finishScan() {
-    mXclkFreq = (uint32_t)mScanBestMhz * 1000000UL;
+    mXclkFreq = (uint32_t)(mScanBestMhz * 1000000.0f);
     initSensor();
     mAutoAdapt = mScanSavedAdapt;
     mScanning = false;
     mScanDone = true;               // loop() persists the winner to NVS
     AsyncWebSocketClient* c = mWsCamera.client(mClientId);
-    if (c) { char b[32]; snprintf(b, sizeof(b), "scanbest %u", mScanBestMhz); c->text(b); }
-    Serial.printf("[scan] best: %u MHz @ %.1f fps\n", mScanBestMhz, mScanBestFps);
+    if (c) { char b[32]; snprintf(b, sizeof(b), "scanbest %.1f", mScanBestMhz); c->text(b); }
+    Serial.printf("[scan] best: %.1f MHz @ %.1f fps\n", mScanBestMhz, mScanBestFps);
 }
 
 bool CameraHandler::consumeScanDone() {
@@ -472,8 +473,7 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     char status[24];
     snprintf(status, sizeof(status), "up %lu", (unsigned long)(now / 1000000));
     client->text(status);
-    snprintf(status, sizeof(status), "xclk %lu",
-             (unsigned long)((mXclkFreq + 500000) / 1000000));   // rounded MHz
+    snprintf(status, sizeof(status), "xclk %.1f", mXclkFreq / 1000000.0f);
     client->text(status);
 }
 

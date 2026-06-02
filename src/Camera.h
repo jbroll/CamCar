@@ -178,7 +178,7 @@ private:
     int64_t mScanMeasureStart;
     uint32_t mScanFrameMark;   // mDeliveredFrames at measurement start
     float mScanBestFps;
-    uint8_t mScanBestMhz;
+    float mScanBestMhz;
     void finishScan();
 };
 

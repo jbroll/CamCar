@@ -124,8 +124,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
             if (mhz > 20.0f) mhz = 20.0f;
             camera.setXclkFreq((uint32_t)(mhz * 1000000.0f));
             char xbuf[8];
-            if (mhz == (int)mhz) snprintf(xbuf, sizeof(xbuf), "%d", (int)mhz);
-            else                 snprintf(xbuf, sizeof(xbuf), "%.1f", mhz);
+            snprintf(xbuf, sizeof(xbuf), "%.1f", mhz);
             PrefEdit::set("xclk", xbuf);
           } else if (key == "XclkScan") {
             camera.startScan();   // auto-tune; winner persisted in loop()
@@ -411,7 +410,7 @@ void loop() {
   camera.scanTick();                       // advance an auto-tune scan, if running
   if (camera.consumeScanDone()) {          // persist the scan's winner
     char xbuf[8];
-    snprintf(xbuf, sizeof(xbuf), "%lu", (unsigned long)((camera.getXclkFreq() + 500000) / 1000000));
+    snprintf(xbuf, sizeof(xbuf), "%.1f", camera.getXclkFreq() / 1000000.0f);
     PrefEdit::set("xclk", xbuf);
     Serial.printf("[scan] persisted XCLK %s MHz\n", xbuf);
   }
