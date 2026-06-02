@@ -13,7 +13,7 @@
 #include "src/board_config.h"
 
 #include "src/Camera.h"
-#include "src/MjpegStream.h"
+#include "src/MjpegStreamServer.h"
 
 #include "src/PrefEdit.h"
 #include "src/WebHandler.h"
@@ -39,6 +39,9 @@ AsyncWebSocket wsCarInput("/CarInput");
 uint32_t cameraClientId = 0;
 
 CameraHandler camera(wsCamera);
+
+// HTTP-MJPEG stream on its own port + FreeRTOS task (see MjpegStreamServer.h).
+MjpegStreamServer mjpegServer(camera, 81);
 
 // Sign-magnitude drive for one motor: speed -100..100 via PWM on its two input
 // pins (the H-bridge enable is tied high). PWM the input matching the direction
@@ -337,43 +340,10 @@ void setup(void) {
     request->send(response);
   });
 
-  // Live MJPEG for VLC/ffmpeg/NVRs: GET /stream (multipart/x-mixed-replace).
-  // Owns the camera for the connection's lifetime; the WS live view yields.
-  // Also answer HEAD (many MJPEG/ONVIF clients probe with HEAD first) with the
-  // same headers and no body -- otherwise they get a 404 and give up.
-  server.on("/stream", HTTP_GET | HTTP_HEAD, [](AsyncWebServerRequest* request) {
-    if (request->method() == HTTP_HEAD) {
-      AsyncWebServerResponse* head =
-        request->beginResponse(200, "multipart/x-mixed-replace; boundary=frame", "");
-      head->addHeader("Cache-Control", "no-store");
-      request->send(head);
-      return;
-    }
-    MjpegState* st = new MjpegState();   // value-init zeroes all members
-    st->cam = &camera;                   // source for copyLatestFrame()
-    // Per-connection relay buffer in PSRAM (not DRAM): a full JPEG can be ~150KB.
-    st->frame = (uint8_t*)heap_caps_malloc(MJPEG_FRAME_CAP, MALLOC_CAP_SPIRAM);
-    if (!st->frame) {
-      delete st;
-      request->send(503, "text/plain", "out of memory");
-      return;
-    }
-    camera.addStreamClient();            // keep the producer running for /stream
-    Serial.println("[dbg] /stream CONNECT");
-    AsyncWebServerResponse* response = request->beginChunkedResponse(
-      "multipart/x-mixed-replace; boundary=frame",
-      [st](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-        return mjpegFill(st, buffer, maxLen);
-      });
-    response->addHeader("Cache-Control", "no-store");
-    request->onDisconnect([st]() {
-      camera.removeStreamClient();       // producer may idle if no WS viewer left
-      if (st->frame) heap_caps_free(st->frame);
-      delete st;
-      Serial.println("[dbg] /stream DISCONNECT");
-    });
-    request->send(response);
-  });
+  // Live MJPEG for VLC/ffmpeg/NVRs is served by mjpegServer on :81 (its own
+  // WiFiServer + task; see MjpegStreamServer.h). It consumes the single
+  // producer's frames via copyLatestFrame(), so it never grabs the camera and
+  // never blocks the AsyncTCP event loop. Started in setup() after WiFi is up.
 
   WebHandler::begin(server);
 
@@ -393,6 +363,11 @@ void setup(void) {
     Serial.println("Camera initialization failed!");
     return;
   }
+
+  // Start the MJPEG stream server (:81) now that WiFi + camera are up. It runs
+  // on its own task and consumes the producer's frames; never grabs the camera.
+  mjpegServer.begin();
+  Serial.println("MJPEG stream server started on :81");
 
   // Apply a persisted XCLK (set via the UI menu). Done here -- after WiFi has
   // associated and the camera is up -- so a bad saved value can't harm the join;
