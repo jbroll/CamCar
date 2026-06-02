@@ -142,8 +142,10 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
         } else if (key == "Pan") {
           panServo.write(valueInt);
         } else if (key == "Tilt") {
-          tiltServo.write(valueInt);   
-        }             
+          tiltServo.write(valueInt);
+        } else if (key == "Resolution") {
+          camera.setResolution((framesize_t)valueInt);
+        }
       }
       break;
     case WS_EVT_PONG:
@@ -255,8 +257,12 @@ void setupWiFi() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    // Disable modem-sleep AFTER association so it reliably sticks; this is
+    // critical for low, stable latency (power-save causes ~400ms RTT spikes).
+    WiFi.setSleep(false);
     Serial.print("\nConnected to the WiFi network at ");
     Serial.println(WiFi.localIP());
+    Serial.printf("RSSI: %ld dBm\n", (long)WiFi.RSSI());
   } else {
     Serial.println("\nWiFi connection timed out; starting setup AP.");
     startSetupAP();

@@ -8,7 +8,6 @@
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "CameraParams.h"
 #include "board_config.h"
 
 class CameraHandler {
@@ -17,15 +16,11 @@ public:
     static constexpr uint8_t MAX_FPS = 30;
     static constexpr uint8_t MIN_FPS = 1;
     static constexpr size_t WS_BUFFER_SIZE = 1460;  // WebSocket frame size
-    static constexpr uint8_t INITIAL_QUALITY_LEVEL = 10;  // Start at middle VGA quality
-    
-    // Public static data - needed by CameraQuality.h
-    static const StreamParameters QUALITY_LEVELS[];
 
     // Constructor/Destructor
     explicit CameraHandler(AsyncWebSocket& wsCamera);
     ~CameraHandler();
-    
+
     // Public methods
     bool begin();
     void setClientId(uint32_t id);
@@ -33,8 +28,12 @@ public:
     void clearClientId();
     void setFPS(uint8_t fps);
     uint8_t getFPS() const;
+
+    // Change capture resolution on the fly (no camera re-init, no glitch).
+    bool setResolution(framesize_t frameSize);
+    framesize_t getResolution() const;
+
     bool sendFrame();
-    void cleanupFrame();
 
 private:
     // Camera GPIO Configuration - from board_config.h
@@ -55,39 +54,21 @@ private:
     static constexpr int HREF_GPIO_NUM = CAM_PIN_HREF;
     static constexpr int PCLK_GPIO_NUM = CAM_PIN_PCLK;
 
-    // Quality control parameters - static constants
-    static constexpr int64_t QUALITY_STABILITY_PERIOD_MICROS = 5000000;  // 5 seconds
-    static constexpr int64_t UPGRADE_STABILITY_PERIOD_MICROS = 10000000; // 10 seconds
-    static constexpr uint8_t MAX_CAPTURE_RETRIES = 5;
+    // Stream tuning. 8 MHz XCLK is critical: 10/20 MHz radiate into the 2.4 GHz
+    // WiFi band and wreck throughput (espressif/arduino-esp32 #5834).
+    static constexpr uint32_t XCLK_FREQ_HZ = 8000000;
+    static constexpr framesize_t DEFAULT_FRAMESIZE = FRAMESIZE_VGA;
+    static constexpr uint8_t DEFAULT_JPEG_QUALITY = 12;
+    static constexpr uint8_t DEFAULT_FPS = 15;
+    // Max queued frames before we drop one (bounds latency under backpressure).
+    static constexpr uint32_t MAX_INFLIGHT_FRAMES = 3;
 
-    // Member variables - WebSocket related
     AsyncWebSocket& mWsCamera;
     uint32_t mClientId;
-    bool mTransmissionInProgress;
-    size_t mCurrentFrameSize;
-
-    // Member variables - Camera related
-    camera_fb_t* mPriorFrame;
     uint8_t mTargetFPS;
-    uint8_t mCurrentQualityLevel;
-    uint8_t mCaptureFailCount;
-
-    // Member variables - Timing
+    framesize_t mFrameSize;
+    uint8_t mJpegQuality;
     int64_t mLastFrameTime;
-    int64_t mQualityChangeTime;
-    int64_t mLastCaptureFailTime;
-    int64_t mLastCongestionCheck;
-
-    // Private methods
-    void checkCongestion(AsyncWebSocketClient* client);
-    bool applyQualityLevel(uint8_t level);
-    bool handleCaptureFailure();
-    void resetCaptureStats();
-    
-    // Helper methods
-    bool isValidQualityLevel(uint8_t level) const {
-        return level < QUALITY_LEVELS_COUNT;
-    }
 };
 
 #endif // CAMERA_HANDLER_H

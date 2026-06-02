@@ -33,6 +33,25 @@
             object-fit: contain;
         }
 
+        #streamStats {
+            margin-top: 3px;
+            color: #0f0;
+            font: 12px/1.3 monospace;
+            white-space: nowrap;
+        }
+
+        #resolutionSelect {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #0f0;
+            border: 1px solid #0f0;
+            font: 12px monospace;
+            padding: 2px;
+            border-radius: 3px;
+        }
+
         #controlsContainer {
             width: 100%;
             height: 34vh;
@@ -84,10 +103,20 @@
     </style>
 </head>
 <body>
-    <div id="connectionStatus">Connecting...</div>
-    
+    <div id="connectionStatus">
+        <span id="connText">Connecting...</span>
+        <div id="streamStats">--</div>
+    </div>
+
     <div id="videoContainer">
         <img id="cameraImage" src="" alt="Camera Stream">
+        <select id="resolutionSelect" title="Camera resolution">
+            <option value="5">QVGA 320x240</option>
+            <option value="6">CIF 400x296</option>
+            <option value="8" selected>VGA 640x480</option>
+            <option value="9">SVGA 800x600</option>
+            <option value="10">XGA 1024x768</option>
+        </select>
     </div>
 
     <div id="controlsContainer">
@@ -221,37 +250,64 @@
         var webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";
         var websocketCamera;
         var websocketCarInput;
+        var statFrames = 0, statBytes = 0;
 
         function initCameraWebSocket() {
             websocketCamera = new WebSocket(webSocketCameraUrl);
             websocketCamera.binaryType = 'blob';
             websocketCamera.onopen = function(event) {
-                document.getElementById('connectionStatus').textContent = 'Camera Connected';
+                document.getElementById('connText').textContent = 'Camera Connected';
             };
             websocketCamera.onclose = function(event) {
-                document.getElementById('connectionStatus').textContent = 'Camera Disconnected - Retrying...';
+                document.getElementById('connText').textContent = 'Camera Disconnected - Retrying...';
                 setTimeout(initCameraWebSocket, 2000);
             };
+            var cameraImage = document.getElementById("cameraImage");
+            var prevUrl = null;
             websocketCamera.onmessage = function(event) {
-                document.getElementById("cameraImage").src = URL.createObjectURL(event.data);
+                statFrames++;
+                statBytes += event.data.size;
+                var url = URL.createObjectURL(event.data);
+                cameraImage.src = url;
+                // Revoke the previous frame's URL (already displayed) to avoid
+                // the unbounded blob leak the original inline handler had.
+                if (prevUrl) URL.revokeObjectURL(prevUrl);
+                prevUrl = url;
             };
         }
 
         function initCarInputWebSocket() {
             websocketCarInput = new WebSocket(webSocketCarInputUrl);
             websocketCarInput.onopen = function(event) {
-                document.getElementById('connectionStatus').textContent = 'Controls Connected';
+                document.getElementById('connText').textContent = 'Controls Connected';
             };
             websocketCarInput.onclose = function(event) {
-                document.getElementById('connectionStatus').textContent = 'Controls Disconnected - Retrying...';
+                document.getElementById('connText').textContent = 'Controls Disconnected - Retrying...';
                 setTimeout(initCarInputWebSocket, 2000);
             };
+        }
+
+        // Stream stats overlay (measured in-browser; no serial needed)
+        function updateStreamStats() {
+            var kb = statFrames ? (statBytes / statFrames / 1024) : 0;
+            var img = document.getElementById("cameraImage");
+            var res = img.naturalWidth ? img.naturalWidth + "x" + img.naturalHeight : "--";
+            document.getElementById("streamStats").textContent =
+                statFrames + " fps   " + res + "   " + kb.toFixed(1) + " KB/f";
+            statFrames = 0;
+            statBytes = 0;
         }
 
         // Initialize WebSocket connections
         window.onload = function() {
             initCameraWebSocket();
             initCarInputWebSocket();
+            setInterval(updateStreamStats, 1000);
+            document.getElementById("resolutionSelect").addEventListener("change", function() {
+                if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
+                    websocketCarInput.send("Resolution," + this.value);
+                }
+            });
         };
     </script>
 </body>
