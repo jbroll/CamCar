@@ -1,39 +1,20 @@
 #ifndef BOARD_CONFIG_H
 #define BOARD_CONFIG_H
 
-// Hardware pin map for the Freenove ESP32-S3-WROOM CAM board.
-// Single source of truth for all GPIO assignments (camera + peripherals).
-// Camera pins verified against Freenove ESPHome config and Freenove GPIO notes.
+// Selects the per-board pin map by compile target. Each board's map lives in a
+// file named after its FQBN board id (esp32:esp32:<board>):
+//   esp32:esp32:esp32s3   -> board_config_esp32s3.h   (Freenove ESP32-S3-WROOM CAM)
+//   esp32:esp32:esp32cam  -> board_config_esp32cam.h  (AI-Thinker ESP32-CAM)
+// The two supported boards are different chips, so we dispatch on the chip
+// target macro (the esp32cam FQBN reports the generic ARDUINO_ESP32_DEV board,
+// which isn't unique, but CONFIG_IDF_TARGET_* is).
 
-// ---- Camera (OV2640, onboard -- no user wiring) ----
-#define CAM_PIN_PWDN  -1
-#define CAM_PIN_RESET -1
-#define CAM_PIN_XCLK  15
-#define CAM_PIN_SIOD   4   // I2C SDA
-#define CAM_PIN_SIOC   5   // I2C SCL
-#define CAM_PIN_D7    16   // Y9
-#define CAM_PIN_D6    17   // Y8
-#define CAM_PIN_D5    18   // Y7
-#define CAM_PIN_D4    12   // Y6
-#define CAM_PIN_D3    10   // Y5
-#define CAM_PIN_D2     8   // Y4
-#define CAM_PIN_D1     9   // Y3
-#define CAM_PIN_D0    11   // Y2
-#define CAM_PIN_VSYNC  6
-#define CAM_PIN_HREF   7
-#define CAM_PIN_PCLK  13
-
-// ---- Drive peripherals (wired by user to these free GPIOs) ----
-// Motor speed is sign-magnitude PWM on the four direction inputs (2 per motor);
-// the driver's enable is tied HIGH to 3.3V in hardware, so GPIO 1 is unused/free.
-#define MOTOR_SPEED_PIN   1   // SPARE (motor enable tied to 3.3V in hardware)
-#define RIGHT_MOTOR_IN1  41   // PWM, sign-magnitude
-#define RIGHT_MOTOR_IN2  42
-#define LEFT_MOTOR_IN1   40
-#define LEFT_MOTOR_IN2   39
-#define PAN_PIN          47   // pan servo signal
-#define TILT_PIN         21   // tilt servo signal
-#define LIGHT_PIN        14   // headlight LED (PWM)
-#define STATUS_LED        2   // onboard LED (WiFi-connect blink)
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+  #include "board_config_esp32s3.h"
+#elif defined(CONFIG_IDF_TARGET_ESP32)
+  #include "board_config_esp32cam.h"
+#else
+  #error "CamCar: no board_config for this target (build for esp32 or esp32s3)"
+#endif
 
 #endif // BOARD_CONFIG_H

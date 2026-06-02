@@ -157,8 +157,10 @@ void setUpPinModes() {
   ledcAttachChannel(LEFT_MOTOR_IN2,  PWMFreq, PWMResolution, 5);
   tankDrive(0, 0);
 
-  pinMode(LIGHT_PIN, OUTPUT);
-  digitalWrite(LIGHT_PIN, LOW);
+  if (LIGHT_PIN >= 0) {        // some boards have no spare pin for a light
+    pinMode(LIGHT_PIN, OUTPUT);
+    digitalWrite(LIGHT_PIN, LOW);
+  }
 }
 
 // WiFi connection behaviour

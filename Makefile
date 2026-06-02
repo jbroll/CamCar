@@ -7,8 +7,16 @@ VENV := venv
 PYTHON_VENV := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-BOARD=esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app
-PORT=/dev/ttyACM0
+# Board target: s3 (Freenove ESP32-S3-WROOM CAM, default) or cam (AI-Thinker
+# ESP32-CAM). Override per-invocation, e.g. `make upload TARGET=cam`.
+TARGET ?= s3
+ifeq ($(TARGET),cam)
+  BOARD = esp32:esp32:esp32cam
+  PORT ?= /dev/ttyUSB0
+else
+  BOARD = esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app
+  PORT ?= /dev/ttyACM0
+endif
 BAUD=115200
 
 INO_FILE=CamCar.ino
