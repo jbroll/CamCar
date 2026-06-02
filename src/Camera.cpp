@@ -56,7 +56,9 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mSentSlots(0)
     , mDroppedSlots(0)
     , mClearWindows(0)
+    , mCongestedWindows(0)
     , mLastAdaptTime(0)
+    , mUpshiftInhibitUntil(0)
     , mPauseRequested(false)
     , mPaused(false)
 {
@@ -214,25 +216,33 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     mDroppedSlots = 0;
     uint32_t total = sent + dropped;
 
-    // Auto-adapt resolution between the floor and the user-selected ceiling.
+    // Auto-adapt between the floor and the user-selected ceiling, with
+    // hysteresis to avoid oscillation: downshift only after *sustained*
+    // congestion, and suppress upshifts for a cooldown after a downshift.
     if (total > 0) {
-        if (dropped * 4 > total && mLevelIdx > 0) {
-            // >25% of slots dropped: the link can't sustain this resolution.
-            mLevelIdx--;
-            applyLevel();
+        bool congested = (dropped * 4 > total);   // >25% of slots dropped
+        if (congested) {
             mClearWindows = 0;
-            Serial.printf("[adapt] congested (%u/%u dropped) -> down to %s\n",
-                          dropped, total, framesizeName(mFrameSize));
-        } else if (dropped == 0 && mLevelIdx < mCeilingIdx) {
-            // Clean window: cautiously climb back toward the ceiling.
-            if (++mClearWindows >= 2) {
-                mLevelIdx++;
+            if (++mCongestedWindows >= DOWNSHIFT_WINDOWS && mLevelIdx > 0) {
+                mLevelIdx--;
                 applyLevel();
-                mClearWindows = 0;
-                Serial.printf("[adapt] clear -> up to %s\n", framesizeName(mFrameSize));
+                mCongestedWindows = 0;
+                mUpshiftInhibitUntil = now + UPSHIFT_INHIBIT_US;
+                Serial.printf("[adapt] congested (%u/%u dropped) -> down to %s\n",
+                              dropped, total, framesizeName(mFrameSize));
             }
         } else {
-            mClearWindows = 0;
+            mCongestedWindows = 0;
+            if (dropped == 0 && mLevelIdx < mCeilingIdx && now >= mUpshiftInhibitUntil) {
+                if (++mClearWindows >= UPSHIFT_WINDOWS) {
+                    mLevelIdx++;
+                    applyLevel();
+                    mClearWindows = 0;
+                    Serial.printf("[adapt] clear -> up to %s\n", framesizeName(mFrameSize));
+                }
+            } else {
+                mClearWindows = 0;
+            }
         }
     }
 

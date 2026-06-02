@@ -71,6 +71,9 @@ private:
     // Max queued frames before we drop one (bounds latency under backpressure).
     static constexpr uint32_t MAX_INFLIGHT_FRAMES = 3;
     static constexpr int64_t ADAPT_INTERVAL_US = 2000000;  // re-evaluate resolution every 2s
+    static constexpr uint8_t DOWNSHIFT_WINDOWS = 2;        // sustained congested windows before downshift
+    static constexpr uint8_t UPSHIFT_WINDOWS = 2;          // clean windows before an upshift
+    static constexpr int64_t UPSHIFT_INHIBIT_US = 30000000; // no upshift for 30s after a downshift
 
     // Apply the current resolution-ladder level to the sensor (no re-init).
     bool applyLevel();
@@ -90,8 +93,10 @@ private:
     uint8_t mLevelIdx;       // current resolution (<= ceiling)
     uint32_t mSentSlots;     // frames sent this adapt window
     uint32_t mDroppedSlots;  // frames dropped (backpressure) this adapt window
-    uint8_t mClearWindows;   // consecutive clean windows (upshift hysteresis)
+    uint8_t mClearWindows;       // consecutive clean windows (upshift hysteresis)
+    uint8_t mCongestedWindows;   // consecutive congested windows (downshift hysteresis)
     int64_t mLastAdaptTime;
+    int64_t mUpshiftInhibitUntil; // suppress upshifts until this time (post-downshift cooldown)
 
     // Snapshot coordination: captureSnapshot() runs in the async HTTP task and
     // must not touch the camera while the loop's sendFrame() does. It requests
