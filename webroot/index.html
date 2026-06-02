@@ -80,9 +80,10 @@
         }
 
         .joystick-container {
-            width: 40vw;
-            height: 40vw;
-            max-height: 40vh;
+            /* Equal width/height (and bounded by the controls height) so the
+               base is always a circle, in portrait and landscape. */
+            width: min(40vw, 32vh);
+            height: min(40vw, 32vh);
             position: relative;
         }
 
@@ -177,12 +178,16 @@
                 this.init();
             }
 
-            init() {
-                // Calculate center and max distance
+            updateGeometry() {
                 const rect = this.base.getBoundingClientRect();
                 this.centerX = rect.width / 2;
                 this.centerY = rect.height / 2;
                 this.maxDistance = rect.width / 2 - this.thumb.clientWidth / 2;
+            }
+
+            init() {
+                this.updateGeometry();
+                window.addEventListener('resize', () => this.updateGeometry());
 
                 // Touch events. passive:false so preventDefault() can stop the
                 // page scrolling/zooming while a joystick is being dragged.
@@ -199,6 +204,7 @@
 
             handleStart(e) {
                 if (this.active) return;   // already own a touch
+                this.updateGeometry();     // fresh center/radius (orientation-proof)
                 if (e.type === 'mousedown') {
                     if (e.target === this.thumb || e.target === this.base) {
                         e.preventDefault();
