@@ -292,7 +292,9 @@ void setup(void) {
   // Owns the camera for the connection's lifetime; the WS live view yields.
   server.on("/stream", HTTP_GET, [](AsyncWebServerRequest* request) {
     MjpegState* st = new MjpegState();   // value-init zeroes all members
+    st->cam = &camera;                   // enables WS fan-out of these frames
     camera.setHttpStreaming(true);
+    Serial.println("[dbg] /stream CONNECT -> setHttpStreaming(true)");
     AsyncWebServerResponse* response = request->beginChunkedResponse(
       "multipart/x-mixed-replace; boundary=frame",
       [st](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
@@ -303,6 +305,7 @@ void setup(void) {
       if (st->fb) esp_camera_fb_return(st->fb);  // release a half-sent frame
       delete st;
       camera.setHttpStreaming(false);            // hand the camera back to WS
+      Serial.println("[dbg] /stream DISCONNECT -> setHttpStreaming(false)");
     });
     request->send(response);
   });

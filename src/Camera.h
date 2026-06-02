@@ -42,10 +42,15 @@ public:
     // up or down (manual setResolution still works).
     void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }
 
-    // HTTP-MJPEG (/stream) owns the camera while a client is connected; the WS
-    // sendFrame() path yields so the single framebuffer isn't double-grabbed.
+    // HTTP-MJPEG (/stream) owns the camera grab while a client is connected; the
+    // WS sendFrame() path then forwards the shared frames instead of grabbing.
     void setHttpStreaming(bool on) { mHttpStreaming = on; }
     bool isHttpStreaming() const { return mHttpStreaming; }
+
+    // Called from the MJPEG producer (async task) for each grabbed frame so the
+    // WS live view can show the SAME frames concurrently. No-op (no copy) unless
+    // a WS client is also connected. Cross-core safe (double-buffered).
+    void publishSharedFrame(const uint8_t* data, size_t len);
 
     bool sendFrame();
 
@@ -119,6 +124,20 @@ private:
 
     // Set while an HTTP-MJPEG client is streaming (see setHttpStreaming).
     volatile bool mHttpStreaming;
+
+    // Frame fan-out (MJPEG producer -> WS consumer). Double-buffered so the
+    // async-task writer and the loop() reader can run on different cores: the
+    // writer fills the inactive buffer then publishes (index/len/seq) under a
+    // short spinlock; the reader copies the published buffer out (binary() is
+    // fast, the writer won't lap it within two frame intervals).
+    static constexpr size_t SHARED_FRAME_CAP = 180 * 1024;  // ample for up to XGA
+    uint8_t* mShared[2];
+    size_t   mSharedLen[2];
+    volatile uint8_t  mSharedIdx;   // currently published buffer (0/1)
+    volatile uint32_t mSharedSeq;   // bumps on each publish
+    uint32_t mWsSentSeq;            // last seq forwarded to the WS client
+    portMUX_TYPE mSharedMux;
+    bool forwardSharedToWs();       // push the latest shared frame to the WS client
 };
 
 #endif // CAMERA_HANDLER_H

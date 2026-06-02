@@ -63,7 +63,13 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mPauseRequested(false)
     , mPaused(false)
     , mHttpStreaming(false)
+    , mSharedIdx(0)
+    , mSharedSeq(0)
+    , mWsSentSeq(0)
 {
+    mShared[0] = nullptr; mShared[1] = nullptr;
+    mSharedLen[0] = 0;    mSharedLen[1] = 0;
+    mSharedMux = portMUX_INITIALIZER_UNLOCKED;
     int idx = ladderIndex(DEFAULT_FRAMESIZE);
     mCeilingIdx = (idx >= 0) ? (uint8_t)idx : 0;
     mLevelIdx = mCeilingIdx;
@@ -142,10 +148,55 @@ bool CameraHandler::begin() {
         s->set_gainceiling(s, (gainceiling_t)4);
     }
 
+    // Double buffer for fanning MJPEG frames out to a concurrent WS viewer.
+    // PSRAM; non-fatal if it fails (the fan-out just stays disabled).
+    mShared[0] = (uint8_t*)ps_malloc(SHARED_FRAME_CAP);
+    mShared[1] = (uint8_t*)ps_malloc(SHARED_FRAME_CAP);
+    if (!mShared[0] || !mShared[1]) {
+        Serial.println("[stream] shared-frame alloc failed; WS+MJPEG fan-out disabled");
+    }
+
     mLastAdaptTime = esp_timer_get_time();
     Serial.printf("Camera ready: %s q%u  Free PSRAM: %u bytes\n",
                   framesizeName(mFrameSize), mJpegQuality, ESP.getFreePsram());
     return true;
+}
+
+// Called from the MJPEG producer (async task). Copies the frame into the
+// inactive buffer and publishes it for the WS consumer -- but only when a WS
+// client is actually connected, so MJPEG-only streaming pays no copy cost.
+void CameraHandler::publishSharedFrame(const uint8_t* data, size_t len) {
+    if (mClientId == 0) return;                        // no WS consumer
+    if (!mShared[0] || !mShared[1]) return;            // alloc failed
+    if (len == 0 || len > SHARED_FRAME_CAP) return;    // too big -> skip this frame
+    uint8_t w = mSharedIdx ^ 1;                        // write the inactive buffer
+    memcpy(mShared[w], data, len);
+    portENTER_CRITICAL(&mSharedMux);
+    mSharedLen[w] = len;
+    mSharedIdx = w;
+    mSharedSeq++;
+    portEXIT_CRITICAL(&mSharedMux);
+}
+
+// Called from loop() (via sendFrame) while MJPEG owns the grab: forward the
+// latest published frame to the WS client, with the same backpressure drop.
+bool CameraHandler::forwardSharedToWs() {
+    if (mClientId == 0) return false;
+    AsyncWebSocketClient* client = mWsCamera.client(mClientId);
+    if (!client) return false;
+
+    uint8_t idx; size_t len; uint32_t seq;
+    portENTER_CRITICAL(&mSharedMux);
+    idx = mSharedIdx; seq = mSharedSeq; len = mSharedLen[idx];
+    portEXIT_CRITICAL(&mSharedMux);
+
+    if (len == 0 || seq == mWsSentSeq) return false;   // nothing new yet
+    if (client->queueLen() > MAX_INFLIGHT_FRAMES) {    // backpressure: skip, stay current
+        mWsSentSeq = seq;
+        return false;
+    }
+    mWsSentSeq = seq;
+    return mWsCamera.binary(mClientId, mShared[idx], len);
 }
 
 bool CameraHandler::applyLevel() {
@@ -282,9 +333,10 @@ bool CameraHandler::sendFrame() {
     }
     mPaused = false;
 
-    // HTTP-MJPEG (/stream) is grabbing frames itself; don't double-grab.
+    // HTTP-MJPEG (/stream) owns the camera grab; instead of grabbing, forward
+    // its published frames to the WS client so both viewers see the same video.
     if (mHttpStreaming) {
-        return false;
+        return forwardSharedToWs();
     }
 
     if (mClientId == 0) {

@@ -7,14 +7,17 @@
 
 #include "esp_camera.h"
 #include <Arduino.h>
+#include "Camera.h"
 
-// Per-connection filler state. The camera has a single framebuffer, so while a
-// client streams here the WS live-view path must yield (see Camera setHttpStreaming).
+// Per-connection filler state. While a client streams here this connection owns
+// the camera grab (see Camera setHttpStreaming); each grabbed frame is also
+// published to `cam` so a concurrent WS viewer sees the same frames.
 struct MjpegState {
   camera_fb_t* fb;
   size_t pos;        // bytes of the current segment already sent
   bool inHeader;     // true = emitting the part header, false = the JPEG body
   size_t headerLen;
+  CameraHandler* cam;   // for publishSharedFrame (WS fan-out); may be null
   char header[96];
 };
 
@@ -27,6 +30,7 @@ inline size_t mjpegFill(MjpegState* st, uint8_t* buf, size_t maxLen) {
     if (!st->fb) {                          // start of a new frame
       st->fb = esp_camera_fb_get();
       if (!st->fb) return out;              // capture failed -> end the stream
+      if (st->cam) st->cam->publishSharedFrame(st->fb->buf, st->fb->len);  // WS fan-out
       st->headerLen = snprintf(st->header, sizeof(st->header),
           "\r\n--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
           (unsigned)st->fb->len);
