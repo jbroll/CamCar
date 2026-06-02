@@ -24,6 +24,14 @@ Servo tiltServo;
 const int PWMFreq = 1000; /* 1 KHz */
 const int PWMResolution = 8;
 
+// Battery sense (only where BATTERY_PIN >= 0; S3 only). Wire battery+ through a
+// resistor divider into BATTERY_PIN. ADJUST THESE to your divider and pack:
+//   BATTERY_DIVIDER = (R1 + R2) / R2   (e.g. 200k/100k -> Vbat = Vadc * 3.0)
+//   keep Vadc under ~3.0V at full charge.
+const float BATTERY_DIVIDER = 3.0f;   // 200k(top)/100k(bottom)
+const float BATTERY_VMIN    = 6.0f;   // 0%  (2S LiPo empty)
+const float BATTERY_VMAX    = 8.4f;   // 100% (2S LiPo full)
+
 AsyncWebServer server(80);
 AsyncWebSocket wsCamera("/Camera");
 AsyncWebSocket wsCarInput("/CarInput");
@@ -342,7 +350,28 @@ void loop() {
   wsCamera.cleanupClients();
   wsCarInput.cleanupClients();
 
+#if BATTERY_PIN >= 0
+  // Push battery voltage/percent to the page every 2s (text frame "bat <V> <%>",
+  // alongside the camera socket's uptime frame).
+  static uint32_t lastBattery = 0;
+  if (millis() - lastBattery > 2000) {
+    lastBattery = millis();
+    uint32_t id = camera.getClientId();
+    if (id) {
+      uint32_t mv = 0;
+      for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(BATTERY_PIN);
+      float vbat = (mv / 8.0f / 1000.0f) * BATTERY_DIVIDER;
+      int pct = (int)((vbat - BATTERY_VMIN) / (BATTERY_VMAX - BATTERY_VMIN) * 100.0f);
+      if (pct < 0) pct = 0;
+      if (pct > 100) pct = 100;
+      char buf[32];
+      snprintf(buf, sizeof(buf), "bat %.2f %d", vbat, pct);
+      wsCamera.text(id, buf);
+    }
+  }
+#endif
+
   if ( !camera.sendFrame() ) {
-      delay(1); 
+      delay(1);
   }
 }

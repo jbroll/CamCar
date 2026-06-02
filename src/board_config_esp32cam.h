@@ -46,5 +46,6 @@
 #define TILT_PIN          3
 #define LIGHT_PIN         4   // bright onboard flash LED, used as a PWM-less headlight
 #define STATUS_LED       33   // onboard red LED (active LOW)
+#define BATTERY_PIN      -1   // no free ADC1 pin on this board (all consumed by camera/status)
 
 #endif // BOARD_CONFIG_ESP32CAM_H

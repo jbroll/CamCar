@@ -25,7 +25,7 @@
 // ---- Drive peripherals (wired by user to these free GPIOs) ----
 // Motor speed is sign-magnitude PWM on the four direction inputs (2 per motor);
 // the driver's enable is tied HIGH to 3.3V in hardware, so GPIO 1 is unused/free.
-#define MOTOR_SPEED_PIN   1   // SPARE (motor enable tied to 3.3V in hardware)
+#define MOTOR_SPEED_PIN  -1   // SPARE (motor enable tied to 3.3V in hardware)
 #define RIGHT_MOTOR_IN1  41   // PWM, sign-magnitude
 #define RIGHT_MOTOR_IN2  42
 #define LEFT_MOTOR_IN1   40
@@ -34,5 +34,6 @@
 #define TILT_PIN         21   // tilt servo signal
 #define LIGHT_PIN        14   // headlight LED (PWM)
 #define STATUS_LED        2   // onboard LED (WiFi-connect blink)
+#define BATTERY_PIN       1   // ADC1_CH0 (the old MOTOR_SPEED spare); battery divider input
 
 #endif // BOARD_CONFIG_ESP32S3_H

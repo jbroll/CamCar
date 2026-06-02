@@ -37,6 +37,10 @@ function handleStatus(msg) {
     if (msg.indexOf("up ") === 0) {
         deviceUptimeSec = parseInt(msg.slice(3), 10);
         uptimeSyncMs = Date.now();
+    } else if (msg.indexOf("bat ") === 0) {
+        var p = msg.slice(4).split(" ");   // "<volts> <percent>"
+        var el = document.getElementById("battery");
+        if (el) el.textContent = "bat " + p[0] + "V" + (p[1] !== undefined ? " (" + p[1] + "%)" : "");
     }
 }
 
