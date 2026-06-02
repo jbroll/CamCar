@@ -180,6 +180,8 @@ private:
     float mScanBestFps;
     float mScanBestMhz;
     uint8_t mScanSavedLevel;   // resolution level to restore after the scan
+    int64_t mLastPublishUs;    // last publishSharedFrame() time; lets sendFrame
+                               // self-heal if mHttpStreaming sticks (unclean /stream close)
     void finishScan();
 };
 

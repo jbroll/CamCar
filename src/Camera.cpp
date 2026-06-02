@@ -88,6 +88,7 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mScanBestFps(0)
     , mScanBestMhz(8)
     , mScanSavedLevel(0)
+    , mLastPublishUs(0)
 {
     mShared[0] = nullptr; mShared[1] = nullptr;
     mSharedLen[0] = 0;    mSharedLen[1] = 0;
@@ -327,6 +328,7 @@ void CameraHandler::publishSharedFrame(const uint8_t* data, size_t len) {
     if (mClientId == 0) return;                        // no WS consumer
     if (!mShared[0] || !mShared[1]) return;            // alloc failed
     if (len == 0 || len > SHARED_FRAME_CAP) return;    // too big -> skip this frame
+    mLastPublishUs = esp_timer_get_time();
     uint8_t w = mSharedIdx ^ 1;                        // write the inactive buffer
     memcpy(mShared[w], data, len);
     portENTER_CRITICAL(&mSharedMux);
@@ -486,6 +488,8 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     client->text(status);
     snprintf(status, sizeof(status), "fps %u", mTargetFPS);
     client->text(status);
+    snprintf(status, sizeof(status), "res %u", mLevelIdx);   // current resolution ladder index
+    client->text(status);
 }
 
 bool CameraHandler::sendFrame() {
@@ -500,9 +504,11 @@ bool CameraHandler::sendFrame() {
         return false;                        // camera deinited (XCLK off)
     }
 
-    // HTTP-MJPEG (/stream) owns the camera grab; instead of grabbing, forward
-    // its published frames to the WS client so both viewers see the same video.
-    if (mHttpStreaming) {
+    // HTTP-MJPEG (/stream) owns the camera grab; forward its published frames to
+    // the WS client. But only while it's *actively* publishing -- if no frame
+    // for >1s (e.g. mHttpStreaming stuck after an unclean /stream close), fall
+    // through and grab normally so the WS path self-heals.
+    if (mHttpStreaming && (esp_timer_get_time() - mLastPublishUs) < 1000000) {
         return forwardSharedToWs();
     }
 
