@@ -12,6 +12,16 @@ static const framesize_t RES_LADDER[] = {
 };
 static const uint8_t RES_LADDER_COUNT = sizeof(RES_LADDER) / sizeof(RES_LADDER[0]);
 
+// Snapshot ladder (stills): wider range, up to the OV2640 maximum.
+static const framesize_t SNAP_LADDER[] = {
+    FRAMESIZE_VGA,    // 640x480
+    FRAMESIZE_SVGA,   // 800x600
+    FRAMESIZE_XGA,    // 1024x768
+    FRAMESIZE_SXGA,   // 1280x1024
+    FRAMESIZE_UXGA,   // 1600x1200
+};
+static const uint8_t SNAP_LADDER_COUNT = sizeof(SNAP_LADDER) / sizeof(SNAP_LADDER[0]);
+
 static const char* framesizeName(framesize_t fs) {
     switch (fs) {
         case FRAMESIZE_QVGA: return "QVGA 320x240";
@@ -19,9 +29,13 @@ static const char* framesizeName(framesize_t fs) {
         case FRAMESIZE_VGA:  return "VGA 640x480";
         case FRAMESIZE_SVGA: return "SVGA 800x600";
         case FRAMESIZE_XGA:  return "XGA 1024x768";
+        case FRAMESIZE_SXGA: return "SXGA 1280x1024";
+        case FRAMESIZE_UXGA: return "UXGA 1600x1200";
         default:             return "?";
     }
 }
+
+uint8_t CameraHandler::snapshotCount() { return SNAP_LADDER_COUNT; }
 
 static int ladderIndex(framesize_t fs) {
     for (uint8_t i = 0; i < RES_LADDER_COUNT; i++) {
@@ -43,6 +57,8 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mDroppedSlots(0)
     , mClearWindows(0)
     , mLastAdaptTime(0)
+    , mPauseRequested(false)
+    , mPaused(false)
 {
     int idx = ladderIndex(DEFAULT_FRAMESIZE);
     mCeilingIdx = (idx >= 0) ? (uint8_t)idx : 0;
@@ -85,10 +101,10 @@ bool CameraHandler::begin() {
     config.pin_reset = RESET_GPIO_NUM;
     config.xclk_freq_hz = XCLK_FREQ_HZ;
     config.pixel_format = PIXFORMAT_JPEG;
-    // Size the framebuffer for the largest ladder entry so switching *up* to a
-    // bigger resolution on the fly always fits; the sensor is set to the
-    // current (smaller) size right after init.
-    config.frame_size = RES_LADDER[RES_LADDER_COUNT - 1];
+    // Size the framebuffer for the largest size we ever use (UXGA snapshots),
+    // so switching *up* on the fly always fits; the sensor is set to the
+    // current (smaller) streaming size right after init.
+    config.frame_size = FRAMESIZE_UXGA;
     config.jpeg_quality = mJpegQuality;
 
     // Frame buffer in PSRAM (needed for larger JPEGs). Double-buffer so the
@@ -152,6 +168,41 @@ bool CameraHandler::setResolution(uint8_t ladderIndex) {
     return true;
 }
 
+camera_fb_t* CameraHandler::captureSnapshot(uint8_t snapIndex) {
+    if (snapIndex >= SNAP_LADDER_COUNT) snapIndex = SNAP_LADDER_COUNT - 1;
+    framesize_t res = SNAP_LADDER[snapIndex];
+
+    sensor_t* s = esp_camera_sensor_get();
+    if (!s) return nullptr;
+
+    // Pause streaming and wait for the loop's sendFrame() to release the camera.
+    mPauseRequested = true;
+    int64_t deadline = esp_timer_get_time() + 300000;  // 300ms safety net
+    while (!mPaused && esp_timer_get_time() < deadline) {
+        delay(1);
+    }
+
+    framesize_t prevSize = mFrameSize;
+    uint8_t prevQuality = mJpegQuality;
+    s->set_quality(s, 10);          // higher quality for a still
+    s->set_framesize(s, res);
+
+    // Discard a couple of frames so the new resolution/exposure settles.
+    for (int i = 0; i < 2; i++) {
+        camera_fb_t* f = esp_camera_fb_get();
+        if (f) esp_camera_fb_return(f);
+    }
+    camera_fb_t* fb = esp_camera_fb_get();
+
+    // Restore streaming settings and resume the stream.
+    s->set_framesize(s, prevSize);
+    s->set_quality(s, prevQuality);
+    mPauseRequested = false;
+
+    Serial.printf("Snapshot %s -> %u bytes\n", framesizeName(res), fb ? fb->len : 0);
+    return fb;
+}
+
 void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     if (now - mLastAdaptTime < ADAPT_INTERVAL_US) return;
     int64_t elapsed = now - mLastAdaptTime;
@@ -192,6 +243,13 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
 }
 
 bool CameraHandler::sendFrame() {
+    // Yield the camera while a snapshot is in progress (see captureSnapshot).
+    if (mPauseRequested) {
+        mPaused = true;
+        return false;
+    }
+    mPaused = false;
+
     if (mClientId == 0) {
         return false;
     }

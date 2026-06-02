@@ -37,6 +37,12 @@ public:
 
     bool sendFrame();
 
+    // Capture one still at SNAP_LADDER[snapIndex] (up to UXGA). Briefly pauses
+    // streaming, switches the sensor, grabs a frame, restores, and resumes.
+    // Returns a JPEG fb the caller MUST esp_camera_fb_return(); null on failure.
+    camera_fb_t* captureSnapshot(uint8_t snapIndex);
+    static uint8_t snapshotCount();
+
 private:
     // Camera GPIO Configuration - from board_config.h
     static constexpr int PWDN_GPIO_NUM = CAM_PIN_PWDN;
@@ -86,6 +92,12 @@ private:
     uint32_t mDroppedSlots;  // frames dropped (backpressure) this adapt window
     uint8_t mClearWindows;   // consecutive clean windows (upshift hysteresis)
     int64_t mLastAdaptTime;
+
+    // Snapshot coordination: captureSnapshot() runs in the async HTTP task and
+    // must not touch the camera while the loop's sendFrame() does. It requests
+    // a pause and waits for sendFrame() to acknowledge before capturing.
+    volatile bool mPauseRequested;
+    volatile bool mPaused;
 };
 
 #endif // CAMERA_HANDLER_H

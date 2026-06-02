@@ -285,6 +285,38 @@ void setup(void) {
   setupWiFi();
 
   PrefEdit::begin(&server, "/config", configParams);
+
+  // High-res still: GET /snapshot?res=<index>[&download=1]. Pauses the stream,
+  // captures one frame at the requested size, then resumes.
+  server.on("/snapshot", HTTP_GET, [](AsyncWebServerRequest* request) {
+    uint8_t idx = 0;
+    if (request->hasParam("res")) {
+      idx = (uint8_t)request->getParam("res")->value().toInt();
+    }
+    bool download = request->hasParam("download");
+    camera_fb_t* fb = camera.captureSnapshot(idx);
+    if (!fb) {
+      request->send(503, "text/plain", "snapshot capture failed");
+      return;
+    }
+    size_t len = fb->len;
+    AsyncWebServerResponse* response = request->beginResponse("image/jpeg", len,
+      [fb, len](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+        size_t remaining = len - index;
+        size_t n = remaining < maxLen ? remaining : maxLen;
+        memcpy(buffer, fb->buf + index, n);
+        if (index + n >= len) {
+          esp_camera_fb_return(fb);  // free after the final chunk is sent
+        }
+        return n;
+      });
+    response->addHeader("Cache-Control", "no-store");
+    if (download) {
+      response->addHeader("Content-Disposition", "attachment; filename=snapshot.jpg");
+    }
+    request->send(response);
+  });
+
   WebHandler::begin(server);
 
   camera.setFPS(10);
