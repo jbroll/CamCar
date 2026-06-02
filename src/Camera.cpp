@@ -222,7 +222,7 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     // congestion, and suppress upshifts for a cooldown after a downshift.
     // Skipped entirely when locked (mAutoAdapt false) -- resolution stays put.
     if (mAutoAdapt && total > 0) {
-        bool congested = (dropped * 4 > total);   // >25% of slots dropped
+        bool congested = (dropped * 2 > total);   // >50% of slots dropped
         if (congested) {
             mClearWindows = 0;
             if (++mCongestedWindows >= DOWNSHIFT_WINDOWS && mLevelIdx > 0) {

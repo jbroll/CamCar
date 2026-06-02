@@ -75,7 +75,7 @@ private:
     // Max queued frames before we drop one (bounds latency under backpressure).
     static constexpr uint32_t MAX_INFLIGHT_FRAMES = 3;
     static constexpr int64_t ADAPT_INTERVAL_US = 2000000;  // re-evaluate resolution every 2s
-    static constexpr uint8_t DOWNSHIFT_WINDOWS = 2;        // sustained congested windows before downshift
+    static constexpr uint8_t DOWNSHIFT_WINDOWS = 3;        // sustained congested windows before downshift (~6s)
     static constexpr uint8_t UPSHIFT_WINDOWS = 2;          // clean windows before an upshift
     static constexpr int64_t UPSHIFT_INHIBIT_US = 30000000; // no upshift for 30s after a downshift
 
