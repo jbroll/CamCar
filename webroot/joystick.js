@@ -1,30 +1,10 @@
 /*
- * Name          : joy.js
- * @author       : Roberto D'Amico (Bobboteck)
- * Last modified : 09.06.2020
- * Revision      : 2.0.0
+ * CamCar virtual joystick -- a DOM-based control based on the JoyStick project
+ * (https://github.com/bobboteck/JoyStick) by Roberto D'Amico.
  *
- * Modification History:
- * Date         Version     Modified By     Description
- * 2021-12-21   2.0.0       Roberto D'Amico New version of the project that integrates the callback functions, while 
- *                                          maintaining compatibility with previous versions. Fixed Issue #27 too, 
- *                                          thanks to @artisticfox8 for the suggestion.
- * 2020-06-09   1.1.6       Roberto D'Amico Fixed Issue #10 and #11
- * 2020-04-20   1.1.5       Roberto D'Amico Correct: Two sticks in a row, thanks to @liamw9534 for the suggestion
- * 2020-04-03               Roberto D'Amico Correct: InternalRadius when change the size of canvas, thanks to 
- *                                          @vanslipon for the suggestion
- * 2020-01-07   1.1.4       Roberto D'Amico Close #6 by implementing a new parameter to set the functionality of 
- *                                          auto-return to 0 position
- * 2019-11-18   1.1.3       Roberto D'Amico Close #5 correct indication of East direction
- * 2019-11-12   1.1.2       Roberto D'Amico Removed Fix #4 incorrectly introduced and restored operation with touch 
- *                                          devices
- * 2019-11-12   1.1.1       Roberto D'Amico Fixed Issue #4 - Now JoyStick work in any position in the page, not only 
- *                                          at 0,0
- * 
  * The MIT License (MIT)
  *
- *  This file is part of the JoyStick Project (https://github.com/bobboteck/JoyStick).
- *	Copyright (c) 2015 Roberto D'Amico (Bobboteck).
+ * Copyright (c) 2015 Roberto D'Amico (Bobboteck).
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,7 +12,7 @@
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
  *
@@ -43,5 +23,145 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
+ *
+ * Each instance tracks its own touch by id so two joysticks can be driven
+ * simultaneously (multi-touch), and recomputes its geometry on resize/drag so
+ * it stays correct across orientation changes.
  */
-let StickStatus={xPosition:0,yPosition:0,x:0,y:0,cardinalDirection:"C"};var JoyStick=function(t,e,i){var o=void 0===(e=e||{}).title?"joystick":e.title,n=void 0===e.width?0:e.width,a=void 0===e.height?0:e.height,r=void 0===e.internalFillColor?"#00AA00":e.internalFillColor,c=void 0===e.internalLineWidth?2:e.internalLineWidth,s=void 0===e.internalStrokeColor?"#003300":e.internalStrokeColor,d=void 0===e.externalLineWidth?2:e.externalLineWidth,u=void 0===e.externalStrokeColor?"#008000":e.externalStrokeColor,h=void 0===e.autoReturnToCenter||e.autoReturnToCenter;i=i||function(t){};var S=document.getElementById(t);S.style.touchAction="none";var f=document.createElement("canvas");f.id=o,0===n&&(n=S.clientWidth),0===a&&(a=S.clientHeight),f.width=n,f.height=a,S.appendChild(f);var l=f.getContext("2d"),k=0,g=2*Math.PI,x=(f.width-(f.width/2+10))/2,v=x+5,P=x+30,m=f.width/2,C=f.height/2,p=f.width/10,y=-1*p,w=f.height/10,L=-1*w,F=m,E=C;function W(){l.beginPath(),l.arc(m,C,P,0,g,!1),l.lineWidth=d,l.strokeStyle=u,l.stroke()}function T(){l.beginPath(),F<x&&(F=v),F+x>f.width&&(F=f.width-v),E<x&&(E=v),E+x>f.height&&(E=f.height-v),l.arc(F,E,x,0,g,!1);var t=l.createRadialGradient(m,C,5,m,C,200);t.addColorStop(0,r),t.addColorStop(1,s),l.fillStyle=t,l.fill(),l.lineWidth=c,l.strokeStyle=s,l.stroke()}function D(){let t="",e=F-m,i=E-C;return i>=L&&i<=w&&(t="C"),i<L&&(t="N"),i>w&&(t="S"),e<y&&("C"===t?t="W":t+="W"),e>p&&("C"===t?t="E":t+="E"),t}"ontouchstart"in document.documentElement?(f.addEventListener("touchstart",function(t){k=1},!1),document.addEventListener("touchmove",function(t){1===k&&t.targetTouches[0].target===f&&(F=t.targetTouches[0].pageX,E=t.targetTouches[0].pageY,"BODY"===f.offsetParent.tagName.toUpperCase()?(F-=f.offsetLeft,E-=f.offsetTop):(F-=f.offsetParent.offsetLeft,E-=f.offsetParent.offsetTop),l.clearRect(0,0,f.width,f.height),W(),T(),StickStatus.xPosition=F,StickStatus.yPosition=E,StickStatus.x=((F-m)/v*100).toFixed(),StickStatus.y=((E-C)/v*100*-1).toFixed(),StickStatus.cardinalDirection=D(),i(StickStatus))},!1),document.addEventListener("touchend",function(t){k=0,h&&(F=m,E=C);l.clearRect(0,0,f.width,f.height),W(),T(),StickStatus.xPosition=F,StickStatus.yPosition=E,StickStatus.x=((F-m)/v*100).toFixed(),StickStatus.y=((E-C)/v*100*-1).toFixed(),StickStatus.cardinalDirection=D(),i(StickStatus)},!1)):(f.addEventListener("mousedown",function(t){k=1},!1),document.addEventListener("mousemove",function(t){1===k&&(F=t.pageX,E=t.pageY,"BODY"===f.offsetParent.tagName.toUpperCase()?(F-=f.offsetLeft,E-=f.offsetTop):(F-=f.offsetParent.offsetLeft,E-=f.offsetParent.offsetTop),l.clearRect(0,0,f.width,f.height),W(),T(),StickStatus.xPosition=F,StickStatus.yPosition=E,StickStatus.x=((F-m)/v*100).toFixed(),StickStatus.y=((E-C)/v*100*-1).toFixed(),StickStatus.cardinalDirection=D(),i(StickStatus))},!1),document.addEventListener("mouseup",function(t){k=0,h&&(F=m,E=C);l.clearRect(0,0,f.width,f.height),W(),T(),StickStatus.xPosition=F,StickStatus.yPosition=E,StickStatus.x=((F-m)/v*100).toFixed(),StickStatus.y=((E-C)/v*100*-1).toFixed(),StickStatus.cardinalDirection=D(),i(StickStatus)},!1)),W(),T(),this.GetWidth=function(){return f.width},this.GetHeight=function(){return f.height},this.GetPosX=function(){return F},this.GetPosY=function(){return E},this.GetX=function(){return((F-m)/v*100).toFixed()},this.GetY=function(){return((E-C)/v*100*-1).toFixed()},this.GetDir=function(){return D()}};
+class Joystick {
+    constructor(container, onChange) {
+        this.container = container;
+        this.thumb = container.querySelector('.joystick-thumb');
+        this.base = container.querySelector('.joystick-base');
+        this.onChange = onChange;
+        this.active = false;
+        this.centerX = 0;
+        this.centerY = 0;
+        this.maxDistance = 0;
+        this.currentX = 0;
+        this.currentY = 0;
+        this.touchId = null;   // identifier of the touch this joystick owns
+
+        this.init();
+    }
+
+    updateGeometry() {
+        const rect = this.base.getBoundingClientRect();
+        this.centerX = rect.width / 2;
+        this.centerY = rect.height / 2;
+        this.maxDistance = rect.width / 2 - this.thumb.clientWidth / 2;
+    }
+
+    init() {
+        this.updateGeometry();
+        window.addEventListener('resize', () => this.updateGeometry());
+
+        // Touch events. passive:false so preventDefault() can stop the
+        // page scrolling/zooming while a joystick is being dragged.
+        this.container.addEventListener('touchstart', (e) => this.handleStart(e), { passive: false });
+        document.addEventListener('touchmove', (e) => this.handleMove(e), { passive: false });
+        document.addEventListener('touchend', (e) => this.handleEnd(e), { passive: false });
+        document.addEventListener('touchcancel', (e) => this.handleEnd(e), { passive: false });
+
+        // Mouse events
+        this.container.addEventListener('mousedown', (e) => this.handleStart(e));
+        document.addEventListener('mousemove', (e) => this.handleMove(e));
+        document.addEventListener('mouseup', (e) => this.handleEnd(e));
+    }
+
+    handleStart(e) {
+        if (this.active) return;   // already own a touch
+        this.updateGeometry();     // fresh center/radius (orientation-proof)
+        if (e.type === 'mousedown') {
+            if (e.target === this.thumb || e.target === this.base) {
+                e.preventDefault();
+                this.active = true;
+                this.touchId = 'mouse';
+                this.container.style.opacity = '1';
+            }
+            return;
+        }
+        // Touch: claim the new touch that landed on THIS joystick, by id,
+        // so the two joysticks can be driven independently (multi-touch).
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            if (this.container.contains(t.target)) {
+                e.preventDefault();
+                this.active = true;
+                this.touchId = t.identifier;
+                this.container.style.opacity = '1';
+                break;
+            }
+        }
+    }
+
+    // Return this joystick's tracked pointer from the event, or null.
+    getPoint(e) {
+        if (this.touchId === 'mouse') return e;
+        for (let i = 0; i < e.touches.length; i++) {
+            if (e.touches[i].identifier === this.touchId) return e.touches[i];
+        }
+        return null;
+    }
+
+    handleMove(e) {
+        if (!this.active) return;
+        const touch = this.getPoint(e);
+        if (!touch) return;   // a different finger / joystick moved
+        e.preventDefault();
+
+        const rect = this.base.getBoundingClientRect();
+        let x = touch.clientX - rect.left;
+        let y = touch.clientY - rect.top;
+
+        // Calculate distance from center
+        const deltaX = x - this.centerX;
+        const deltaY = y - this.centerY;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        // If distance is greater than max, scale it down
+        if (distance > this.maxDistance) {
+            x = this.centerX + (deltaX / distance) * this.maxDistance;
+            y = this.centerY + (deltaY / distance) * this.maxDistance;
+        }
+
+        // Update thumb position
+        this.thumb.style.left = `${x - this.thumb.clientWidth / 2}px`;
+        this.thumb.style.top = `${y - this.thumb.clientHeight / 2}px`;
+
+        // Calculate normalized values (-100 to 100)
+        this.currentX = Math.round((x - this.centerX) / this.maxDistance * 100);
+        this.currentY = Math.round((y - this.centerY) / this.maxDistance * -100); // Invert Y axis
+
+        if (this.onChange) {
+            this.onChange(this.currentX, this.currentY);
+        }
+    }
+
+    handleEnd(e) {
+        if (!this.active) return;
+        if (this.touchId === 'mouse') {
+            if (e.type !== 'mouseup') return;
+        } else {
+            let ended = false;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === this.touchId) { ended = true; break; }
+            }
+            if (!ended) return;   // some other finger lifted
+        }
+        e.preventDefault();
+        this.active = false;
+        this.touchId = null;
+        this.container.style.opacity = '0.7';
+
+        // Reset thumb position
+        this.thumb.style.left = '35%';
+        this.thumb.style.top = '35%';
+        this.currentX = 0;
+        this.currentY = 0;
+
+        if (this.onChange) {
+            this.onChange(0, 0);
+        }
+    }
+}
