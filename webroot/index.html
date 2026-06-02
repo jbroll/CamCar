@@ -28,11 +28,11 @@
                 <button id="camBtn" type="button" title="Stop the camera (clears WiFi for solid control); tap again to restart">&#9209;</button>
                 <button id="lockBtn" type="button" title="Lock resolution (disable auto-adapt)">&#128275;</button>
                 <select id="resolutionSelect" title="Camera resolution (max)">
-                    <option value="0">QVGA 320x240</option>
-                    <option value="1">CIF 400x296</option>
-                    <option value="2" selected>VGA 640x480</option>
-                    <option value="3">SVGA 800x600</option>
-                    <option value="4">XGA 1024x768</option>
+                    <option value="0">320x240</option>
+                    <option value="1">400x296</option>
+                    <option value="2" selected>640x480</option>
+                    <option value="3">800x600</option>
+                    <option value="4">1024x768</option>
                 </select>
                 <select id="qualitySelect" title="JPEG quality (lower q = sharper, more bandwidth)">
                     <option value="8">Q: High</option>
@@ -40,7 +40,11 @@
                     <option value="18">Q: Medium</option>
                     <option value="26">Q: Low</option>
                 </select>
-                <select id="fpsSelect" title="Max frame rate. Lower it on a marginal link for smooth video (stops the race/stall); raise it on a strong link. Persisted.">
+                <select id="fpsSelect" title="Max frame rate. Lower it on a marginal link for smooth, low-latency video; raise it on a strong link. Persisted.">
+                    <option value="1">FPS 1</option>
+                    <option value="2">FPS 2</option>
+                    <option value="3">FPS 3</option>
+                    <option value="4">FPS 4</option>
                     <option value="5">FPS 5</option>
                     <option value="8">FPS 8</option>
                     <option value="10">FPS 10</option>
@@ -55,11 +59,11 @@
             <div id="snapshotBar">
                 <button id="lightBtn" type="button" title="Headlight on/off">&#128161;</button>
                 <select id="snapResSelect" title="Snapshot resolution">
-                    <option value="0">VGA</option>
-                    <option value="1">SVGA</option>
-                    <option value="2">XGA</option>
-                    <option value="3">SXGA</option>
-                    <option value="4" selected>UXGA</option>
+                    <option value="0">640x480</option>
+                    <option value="1">800x600</option>
+                    <option value="2">1024x768</option>
+                    <option value="3">1280x1024</option>
+                    <option value="4" selected>1600x1200</option>
                 </select>
                 <button id="snapView" type="button" title="View snapshot in new tab">&#128247;</button>
                 <button id="snapSave" type="button" title="Download snapshot">&#11015;</button>
