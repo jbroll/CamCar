@@ -350,9 +350,16 @@ void setup(void) {
       return;
     }
     MjpegState* st = new MjpegState();   // value-init zeroes all members
-    st->cam = &camera;                   // enables WS fan-out of these frames
-    camera.setHttpStreaming(true);
-    Serial.println("[dbg] /stream CONNECT -> setHttpStreaming(true)");
+    st->cam = &camera;                   // source for copyLatestFrame()
+    // Per-connection relay buffer in PSRAM (not DRAM): a full JPEG can be ~150KB.
+    st->frame = (uint8_t*)heap_caps_malloc(MJPEG_FRAME_CAP, MALLOC_CAP_SPIRAM);
+    if (!st->frame) {
+      delete st;
+      request->send(503, "text/plain", "out of memory");
+      return;
+    }
+    camera.addStreamClient();            // keep the producer running for /stream
+    Serial.println("[dbg] /stream CONNECT");
     AsyncWebServerResponse* response = request->beginChunkedResponse(
       "multipart/x-mixed-replace; boundary=frame",
       [st](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
@@ -360,10 +367,10 @@ void setup(void) {
       });
     response->addHeader("Cache-Control", "no-store");
     request->onDisconnect([st]() {
-      if (st->fb) esp_camera_fb_return(st->fb);  // release a half-sent frame
+      camera.removeStreamClient();       // producer may idle if no WS viewer left
+      if (st->frame) heap_caps_free(st->frame);
       delete st;
-      camera.setHttpStreaming(false);            // hand the camera back to WS
-      Serial.println("[dbg] /stream DISCONNECT -> setHttpStreaming(false)");
+      Serial.println("[dbg] /stream DISCONNECT");
     });
     request->send(response);
   });
@@ -433,8 +440,7 @@ void loop() {
   static uint32_t lastBattery = 0;
   if (millis() - lastBattery > 2000) {
     lastBattery = millis();
-    uint32_t id = camera.getClientId();
-    if (id) {
+    if (wsCamera.count() > 0) {
       uint32_t mv = 0;
       for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(BATTERY_PIN);
       float vbat = (mv / 8.0f / 1000.0f) * BATTERY_DIVIDER;
@@ -443,7 +449,7 @@ void loop() {
       if (pct > 100) pct = 100;
       char buf[32];
       snprintf(buf, sizeof(buf), "bat %.2f %d", vbat, pct);
-      wsCamera.text(id, buf);
+      wsCamera.textAll(buf);
     }
   }
 #endif

@@ -63,15 +63,22 @@ public:
     // up or down (manual setResolution still works).
     void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }
 
-    // HTTP-MJPEG (/stream) owns the camera grab while a client is connected; the
-    // WS sendFrame() path then forwards the shared frames instead of grabbing.
-    void setHttpStreaming(bool on) { mHttpStreaming = on; }
-    bool isHttpStreaming() const { return mHttpStreaming; }
+    // HTTP-MJPEG (/stream) consumer registration. Each connected /stream client
+    // increments this; sendFrame() keeps producing frames while it is > 0 even
+    // with no WS viewer. /stream reads frames via copyLatestFrame() (it does not
+    // grab the camera itself -- the single producer is sendFrame()).
+    void addStreamClient()    { mStreamClients++; }
+    void removeStreamClient() { if (mStreamClients > 0) mStreamClients--; }
+    int  streamClients() const { return mStreamClients; }
 
-    // Called from the MJPEG producer (async task) for each grabbed frame so the
-    // WS live view can show the SAME frames concurrently. No-op (no copy) unless
-    // a WS client is also connected. Cross-core safe (double-buffered).
+    // Producer side: copy the latest grabbed frame into the shared double buffer
+    // so /stream consumers can read it. Called by sendFrame() for every frame.
     void publishSharedFrame(const uint8_t* data, size_t len);
+
+    // Consumer side (the /stream filler, async task): if a frame newer than
+    // lastSeq exists, copy it into dst (cap bytes) and return its seq; otherwise
+    // return lastSeq unchanged. Cross-core safe (double-buffered).
+    uint32_t copyLatestFrame(uint8_t* dst, size_t cap, size_t& outLen, uint32_t lastSeq);
 
     bool sendFrame();
 
@@ -118,8 +125,9 @@ private:
     bool initSensor();
     // Apply the current resolution-ladder level to the sensor (no re-init).
     bool applyLevel();
-    // Periodic: auto-adjust resolution to the link, then emit the stream report.
-    void adaptAndReport(int64_t now, AsyncWebSocketClient* client);
+    // Periodic: auto-adjust resolution to the link, then emit the stream report
+    // and push status text frames to all viewers.
+    void adaptAndReport(int64_t now);
 
     AsyncWebSocket& mWsCamera;
     uint32_t mClientId;
@@ -147,8 +155,9 @@ private:
     volatile bool mPauseRequested;
     volatile bool mPaused;
 
-    // Set while an HTTP-MJPEG client is streaming (see setHttpStreaming).
-    volatile bool mHttpStreaming;
+    // Count of connected HTTP-MJPEG (/stream) clients. While > 0 the producer
+    // keeps grabbing even with no WS viewer; /stream consumes via copyLatestFrame.
+    volatile int mStreamClients;
 
     // True while the camera is stopped (deinited, XCLK off) -- see setCameraEnabled.
     bool mCameraStopped;
@@ -163,9 +172,7 @@ private:
     size_t   mSharedLen[2];
     volatile uint8_t  mSharedIdx;   // currently published buffer (0/1)
     volatile uint32_t mSharedSeq;   // bumps on each publish
-    uint32_t mWsSentSeq;            // last seq forwarded to the WS client
     portMUX_TYPE mSharedMux;
-    bool forwardSharedToWs();       // push the latest shared frame to the WS client
 
     // Auto-tune scan: free-running counter of successful WS sends (the scan
     // metric -- a dirty XCLK collapses delivered throughput) + the state machine.
@@ -181,8 +188,6 @@ private:
     float mScanBestFps;
     float mScanBestMhz;
     uint8_t mScanSavedLevel;   // resolution level to restore after the scan
-    int64_t mLastPublishUs;    // last publishSharedFrame() time; lets sendFrame
-                               // self-heal if mHttpStreaming sticks (unclean /stream close)
     void finishScan();
 };
 

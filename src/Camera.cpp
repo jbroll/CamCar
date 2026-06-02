@@ -1,5 +1,7 @@
 #include "Camera.h"
 #include <WiFi.h>
+#include <vector>
+#include <memory>
 
 // Auto-tune candidates: 8.0 .. 20.0 MHz in 0.5 steps. Half-MHz resolution so the
 // scan finds a clean band even when it's centered on a half-MHz (the band
@@ -71,11 +73,10 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mUpshiftInhibitUntil(0)
     , mPauseRequested(false)
     , mPaused(false)
-    , mHttpStreaming(false)
+    , mStreamClients(0)
     , mCameraStopped(false)
     , mSharedIdx(0)
     , mSharedSeq(0)
-    , mWsSentSeq(0)
     , mDeliveredFrames(0)
     , mScanning(false)
     , mScanDone(false)
@@ -88,7 +89,6 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mScanBestFps(0)
     , mScanBestMhz(8)
     , mScanSavedLevel(0)
-    , mLastPublishUs(0)
 {
     mShared[0] = nullptr; mShared[1] = nullptr;
     mSharedLen[0] = 0;    mSharedLen[1] = 0;
@@ -246,7 +246,7 @@ void CameraHandler::setCameraEnabled(bool on) {
 
 void CameraHandler::startScan() {
     if (mScanning) return;
-    if (mClientId == 0 || mHttpStreaming || mCameraStopped) {
+    if (mClientId == 0 || mStreamClients > 0 || mCameraStopped) {
         Serial.println("[scan] need a connected viewer, camera running, no /stream");
         return;
     }
@@ -321,14 +321,12 @@ bool CameraHandler::consumeScanDone() {
     return true;
 }
 
-// Called from the MJPEG producer (async task). Copies the frame into the
-// inactive buffer and publishes it for the WS consumer -- but only when a WS
-// client is actually connected, so MJPEG-only streaming pays no copy cost.
+// Called by the producer (sendFrame) for every grabbed frame: copy it into the
+// inactive buffer and publish (double-buffered for cross-core reads by the
+// /stream consumer, which runs in the async task).
 void CameraHandler::publishSharedFrame(const uint8_t* data, size_t len) {
-    if (mClientId == 0) return;                        // no WS consumer
     if (!mShared[0] || !mShared[1]) return;            // alloc failed
     if (len == 0 || len > SHARED_FRAME_CAP) return;    // too big -> skip this frame
-    mLastPublishUs = esp_timer_get_time();
     uint8_t w = mSharedIdx ^ 1;                        // write the inactive buffer
     memcpy(mShared[w], data, len);
     portENTER_CRITICAL(&mSharedMux);
@@ -338,27 +336,19 @@ void CameraHandler::publishSharedFrame(const uint8_t* data, size_t len) {
     portEXIT_CRITICAL(&mSharedMux);
 }
 
-// Called from loop() (via sendFrame) while MJPEG owns the grab: forward the
-// latest published frame to the WS client, with the same backpressure drop.
-// Forward the latest published (/stream) frame to the WS client. Pacing is
-// already applied by the caller (sendFrame), so this just delivers.
-bool CameraHandler::forwardSharedToWs() {
-    if (mClientId == 0) return false;
-    AsyncWebSocketClient* client = mWsCamera.client(mClientId);
-    if (!client) return false;
-
+// Consumer side (e.g. the /stream filler): if a frame newer than lastSeq exists,
+// copy it into dst and return its seq; else return lastSeq unchanged. The
+// double buffer means the producer won't overwrite what we read within a frame.
+uint32_t CameraHandler::copyLatestFrame(uint8_t* dst, size_t cap, size_t& outLen,
+                                        uint32_t lastSeq) {
     uint8_t idx; size_t len; uint32_t seq;
     portENTER_CRITICAL(&mSharedMux);
     idx = mSharedIdx; seq = mSharedSeq; len = mSharedLen[idx];
     portEXIT_CRITICAL(&mSharedMux);
-
-    if (len == 0 || seq == mWsSentSeq) return false;   // nothing new yet
-    if (client->queueLen() > MAX_INFLIGHT_FRAMES) {    // backpressure: skip, stay current
-        mWsSentSeq = seq;
-        return false;
-    }
-    mWsSentSeq = seq;
-    return mWsCamera.binary(mClientId, mShared[idx], len);
+    if (seq == lastSeq || len == 0 || len > cap) return lastSeq;  // nothing new / too big
+    memcpy(dst, mShared[idx], len);
+    outLen = len;
+    return seq;
 }
 
 bool CameraHandler::applyLevel() {
@@ -433,7 +423,7 @@ camera_fb_t* CameraHandler::captureSnapshot(uint8_t snapIndex) {
     return fb;
 }
 
-void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
+void CameraHandler::adaptAndReport(int64_t now) {
     if (now - mLastAdaptTime < ADAPT_INTERVAL_US) return;
     int64_t elapsed = now - mLastAdaptTime;
     mLastAdaptTime = now;
@@ -476,22 +466,22 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     }
 
     float fps = sent * 1000000.0f / elapsed;
-    Serial.printf("[stream] %.1f fps | %s q%u target %ufps | dropped %u | queue %u | RSSI %lddBm\n",
+    Serial.printf("[stream] %.1f fps | %s q%u target %ufps | dropped %u | viewers %u | RSSI %lddBm\n",
                   fps, framesizeName(mFrameSize), mJpegQuality, mTargetFPS,
-                  dropped, client->queueLen(), (long)WiFi.RSSI());
+                  dropped, (unsigned)mWsCamera.count(), (long)WiFi.RSSI());
 
-    // Push device uptime + current XCLK to the page as text frames (the browser
-    // tells these from binary JPEG frames by type). The XCLK frame keeps the UI
-    // dropdown in sync with the persisted/applied value after a reboot.
+    // Push device uptime + current XCLK/fps/res to ALL viewers as text frames
+    // (the browser tells these from binary JPEG frames by type). These keep the
+    // UI dropdowns in sync with the persisted/applied values after a reboot.
     char status[24];
     snprintf(status, sizeof(status), "up %lu", (unsigned long)(now / 1000000));
-    client->text(status);
+    mWsCamera.textAll(status);
     snprintf(status, sizeof(status), "xclk %.1f", mXclkFreq / 1000000.0f);
-    client->text(status);
+    mWsCamera.textAll(status);
     snprintf(status, sizeof(status), "fps %u", mTargetFPS);
-    client->text(status);
+    mWsCamera.textAll(status);
     snprintf(status, sizeof(status), "res %u", mLevelIdx);   // current resolution ladder index
-    client->text(status);
+    mWsCamera.textAll(status);
 }
 
 bool CameraHandler::sendFrame() {
@@ -506,38 +496,19 @@ bool CameraHandler::sendFrame() {
         return false;                        // camera deinited (XCLK off)
     }
 
-    if (mClientId == 0) {
-        return false;                        // both delivery paths target the WS client
+    // The single producer. Only grab if someone is watching (WS viewers or a
+    // /stream client). Both consume the frame we publish below.
+    if (mWsCamera.count() == 0 && mStreamClients == 0) {
+        return false;
     }
 
-    // Single fps-cap pacing gate for the WS viewer, applied BEFORE choosing how
-    // we deliver -- so it covers both the normal grab and the /stream fan-out
-    // forward. Advance the clock per slot whether we send or drop.
+    // The ONE fps-cap pacing gate -- the single rate limit that bounds the link,
+    // shared by every viewer. Advance the clock per slot whether we send or skip.
     int64_t now = esp_timer_get_time();
     if (now - mLastFrameTime < 1000000 / mTargetFPS) {
         return false;
     }
     mLastFrameTime = now;
-
-    // While /stream is *actively* grabbing, forward its published frames to the
-    // WS client instead of grabbing again. If it stalls (no publish >1s, e.g.
-    // mHttpStreaming stuck after an unclean close), grab normally -> self-heals.
-    if (mHttpStreaming && (now - mLastPublishUs) < 1000000) {
-        return forwardSharedToWs();
-    }
-
-    AsyncWebSocketClient* client = mWsCamera.client(mClientId);
-    if (!client) {
-        return false;
-    }
-
-    // Backpressure: if the send queue is backing up, drop this slot (keeps
-    // latency low) and record it as the congestion signal for auto-adapt.
-    if (client->queueLen() > MAX_INFLIGHT_FRAMES) {
-        mDroppedSlots++;
-        adaptAndReport(now, client);
-        return false;
-    }
 
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) {
@@ -549,16 +520,22 @@ bool CameraHandler::sendFrame() {
         return false;
     }
 
-    // Send, then return the buffer immediately: AsyncWebSocket::binary() copies
-    // the data into its own queued message, so we must not hold the camera buffer.
-    bool ok = mWsCamera.binary(mClientId, fb->buf, fb->len);
-    esp_camera_fb_return(fb);
-    if (!ok) {
-        return false;
+    // Publish to the shared buffer so /stream consumers can read this same frame.
+    publishSharedFrame(fb->buf, fb->len);
+
+    // Push to every WS /Camera client that has queue room (per-client backpressure
+    // keeps latency low). One shared buffer -> the JPEG is copied once for all.
+    if (mWsCamera.count() > 0) {
+        AsyncWebSocketSharedBuffer shared =
+            std::make_shared<std::vector<uint8_t>>(fb->buf, fb->buf + fb->len);
+        for (auto& c : mWsCamera.getClients()) {
+            if (c.queueLen() <= MAX_INFLIGHT_FRAMES) c.binary(shared);
+        }
     }
+    esp_camera_fb_return(fb);
 
     mSentSlots++;
     mDeliveredFrames++;          // free-running; the auto-tune scan metric
-    adaptAndReport(now, client);
+    adaptAndReport(now);
     return true;
 }
