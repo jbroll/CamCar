@@ -62,6 +62,12 @@ private:
     static constexpr uint8_t DEFAULT_FPS = 15;
     // Max queued frames before we drop one (bounds latency under backpressure).
     static constexpr uint32_t MAX_INFLIGHT_FRAMES = 3;
+    static constexpr int64_t ADAPT_INTERVAL_US = 2000000;  // re-evaluate resolution every 2s
+
+    // Apply the current resolution-ladder level to the sensor (no re-init).
+    bool applyLevel();
+    // Periodic: auto-adjust resolution to the link, then emit the stream report.
+    void adaptAndReport(int64_t now, AsyncWebSocketClient* client);
 
     AsyncWebSocket& mWsCamera;
     uint32_t mClientId;
@@ -69,6 +75,15 @@ private:
     framesize_t mFrameSize;
     uint8_t mJpegQuality;
     int64_t mLastFrameTime;
+
+    // Auto-adapt state. Resolution moves on a ladder between 0 and the
+    // user-selected ceiling; manual selection sets the ceiling and jumps to it.
+    uint8_t mCeilingIdx;     // max resolution (manual selection)
+    uint8_t mLevelIdx;       // current resolution (<= ceiling)
+    uint32_t mSentSlots;     // frames sent this adapt window
+    uint32_t mDroppedSlots;  // frames dropped (backpressure) this adapt window
+    uint8_t mClearWindows;   // consecutive clean windows (upshift hysteresis)
+    int64_t mLastAdaptTime;
 };
 
 #endif // CAMERA_HANDLER_H

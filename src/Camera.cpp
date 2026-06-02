@@ -1,6 +1,17 @@
 #include "Camera.h"
 #include <WiFi.h>
 
+// Resolution ladder (ascending). Auto-adapt moves within [0, ceiling]; the
+// manual "Resolution" command sets the ceiling and jumps to it.
+static const framesize_t RES_LADDER[] = {
+    FRAMESIZE_QVGA,   // 320x240
+    FRAMESIZE_CIF,    // 400x296
+    FRAMESIZE_VGA,    // 640x480
+    FRAMESIZE_SVGA,   // 800x600
+    FRAMESIZE_XGA,    // 1024x768
+};
+static const uint8_t RES_LADDER_COUNT = sizeof(RES_LADDER) / sizeof(RES_LADDER[0]);
+
 static const char* framesizeName(framesize_t fs) {
     switch (fs) {
         case FRAMESIZE_QVGA: return "QVGA 320x240";
@@ -8,10 +19,15 @@ static const char* framesizeName(framesize_t fs) {
         case FRAMESIZE_VGA:  return "VGA 640x480";
         case FRAMESIZE_SVGA: return "SVGA 800x600";
         case FRAMESIZE_XGA:  return "XGA 1024x768";
-        case FRAMESIZE_SXGA: return "SXGA 1280x1024";
-        case FRAMESIZE_UXGA: return "UXGA 1600x1200";
         default:             return "?";
     }
+}
+
+static int ladderIndex(framesize_t fs) {
+    for (uint8_t i = 0; i < RES_LADDER_COUNT; i++) {
+        if (RES_LADDER[i] == fs) return i;
+    }
+    return -1;
 }
 
 CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
@@ -21,7 +37,16 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mFrameSize(DEFAULT_FRAMESIZE)
     , mJpegQuality(DEFAULT_JPEG_QUALITY)
     , mLastFrameTime(0)
+    , mCeilingIdx(0)
+    , mLevelIdx(0)
+    , mSentSlots(0)
+    , mDroppedSlots(0)
+    , mClearWindows(0)
+    , mLastAdaptTime(0)
 {
+    int idx = ladderIndex(DEFAULT_FRAMESIZE);
+    mCeilingIdx = (idx >= 0) ? (uint8_t)idx : 0;
+    mLevelIdx = mCeilingIdx;
 }
 
 void CameraHandler::setClientId(uint32_t id) { mClientId = id; }
@@ -94,24 +119,73 @@ bool CameraHandler::begin() {
         s->set_gainceiling(s, (gainceiling_t)4);
     }
 
+    mLastAdaptTime = esp_timer_get_time();
     Serial.printf("Camera ready: %s q%u  Free PSRAM: %u bytes\n",
                   framesizeName(mFrameSize), mJpegQuality, ESP.getFreePsram());
     return true;
 }
 
-bool CameraHandler::setResolution(framesize_t frameSize) {
+bool CameraHandler::applyLevel() {
     sensor_t* s = esp_camera_sensor_get();
-    if (!s) {
-        Serial.println("setResolution: no sensor");
-        return false;
-    }
-    if (s->set_framesize(s, frameSize) != 0) {
-        Serial.printf("setResolution: failed to set framesize %d\n", (int)frameSize);
-        return false;
-    }
-    mFrameSize = frameSize;
-    Serial.printf("Resolution -> %s\n", framesizeName(frameSize));
+    if (!s) return false;
+    framesize_t fs = RES_LADDER[mLevelIdx];
+    if (s->set_framesize(s, fs) != 0) return false;
+    mFrameSize = fs;
     return true;
+}
+
+// Manual selection: set the ceiling (max resolution) and jump to it.
+bool CameraHandler::setResolution(framesize_t frameSize) {
+    int idx = ladderIndex(frameSize);
+    if (idx < 0) {
+        Serial.printf("setResolution: framesize %d not on the ladder\n", (int)frameSize);
+        return false;
+    }
+    mCeilingIdx = (uint8_t)idx;
+    mLevelIdx = (uint8_t)idx;
+    mClearWindows = 0;
+    if (!applyLevel()) return false;
+    Serial.printf("Resolution ceiling -> %s\n", framesizeName(mFrameSize));
+    return true;
+}
+
+void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
+    if (now - mLastAdaptTime < ADAPT_INTERVAL_US) return;
+    int64_t elapsed = now - mLastAdaptTime;
+    mLastAdaptTime = now;
+
+    uint32_t sent = mSentSlots;
+    uint32_t dropped = mDroppedSlots;
+    mSentSlots = 0;
+    mDroppedSlots = 0;
+    uint32_t total = sent + dropped;
+
+    // Auto-adapt resolution between the floor and the user-selected ceiling.
+    if (total > 0) {
+        if (dropped * 4 > total && mLevelIdx > 0) {
+            // >25% of slots dropped: the link can't sustain this resolution.
+            mLevelIdx--;
+            applyLevel();
+            mClearWindows = 0;
+            Serial.printf("[adapt] congested (%u/%u dropped) -> down to %s\n",
+                          dropped, total, framesizeName(mFrameSize));
+        } else if (dropped == 0 && mLevelIdx < mCeilingIdx) {
+            // Clean window: cautiously climb back toward the ceiling.
+            if (++mClearWindows >= 2) {
+                mLevelIdx++;
+                applyLevel();
+                mClearWindows = 0;
+                Serial.printf("[adapt] clear -> up to %s\n", framesizeName(mFrameSize));
+            }
+        } else {
+            mClearWindows = 0;
+        }
+    }
+
+    float fps = sent * 1000000.0f / elapsed;
+    Serial.printf("[stream] %.1f fps | %s q%u target %ufps | dropped %u | queue %u | RSSI %lddBm\n",
+                  fps, framesizeName(mFrameSize), mJpegQuality, mTargetFPS,
+                  dropped, client->queueLen(), (long)WiFi.RSSI());
 }
 
 bool CameraHandler::sendFrame() {
@@ -124,15 +198,19 @@ bool CameraHandler::sendFrame() {
         return false;
     }
 
-    // Frame-rate pacing
+    // Frame-rate pacing. Advance the clock for this slot whether we send or
+    // drop, so dropped slots are paced and counted at the frame rate.
     int64_t now = esp_timer_get_time();
     if (now - mLastFrameTime < 1000000 / mTargetFPS) {
         return false;
     }
+    mLastFrameTime = now;
 
-    // Backpressure: keep the send queue shallow so latency stays low. If it's
-    // backing up, drop this frame (stream the newest, don't buffer stale ones).
+    // Backpressure: if the send queue is backing up, drop this slot (keeps
+    // latency low) and record it as the congestion signal for auto-adapt.
     if (client->queueLen() > MAX_INFLIGHT_FRAMES) {
+        mDroppedSlots++;
+        adaptAndReport(now, client);
         return false;
     }
 
@@ -153,19 +231,8 @@ bool CameraHandler::sendFrame() {
     if (!ok) {
         return false;
     }
-    mLastFrameTime = now;
 
-    // Periodic stream report (visible via `make monitor`): actual fps + mode.
-    static uint32_t framesSent = 0;
-    static int64_t lastReport = 0;
-    framesSent++;
-    if (now - lastReport >= 2000000) {  // every 2s
-        float fps = framesSent * 1000000.0f / (now - lastReport);
-        Serial.printf("[stream] %.1f fps | %s q%u target %ufps | queue %u | RSSI %lddBm\n",
-                      fps, framesizeName(mFrameSize), mJpegQuality, mTargetFPS,
-                      client->queueLen(), (long)WiFi.RSSI());
-        framesSent = 0;
-        lastReport = now;
-    }
+    mSentSlots++;
+    adaptAndReport(now, client);
     return true;
 }
