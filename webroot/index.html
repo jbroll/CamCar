@@ -172,6 +172,7 @@
                 this.maxDistance = 0;
                 this.currentX = 0;
                 this.currentY = 0;
+                this.touchId = null;   // identifier of the touch this joystick owns
 
                 this.init();
             }
@@ -183,10 +184,12 @@
                 this.centerY = rect.height / 2;
                 this.maxDistance = rect.width / 2 - this.thumb.clientWidth / 2;
 
-                // Touch events
-                this.container.addEventListener('touchstart', (e) => this.handleStart(e));
-                document.addEventListener('touchmove', (e) => this.handleMove(e));
-                document.addEventListener('touchend', (e) => this.handleEnd(e));
+                // Touch events. passive:false so preventDefault() can stop the
+                // page scrolling/zooming while a joystick is being dragged.
+                this.container.addEventListener('touchstart', (e) => this.handleStart(e), { passive: false });
+                document.addEventListener('touchmove', (e) => this.handleMove(e), { passive: false });
+                document.addEventListener('touchend', (e) => this.handleEnd(e), { passive: false });
+                document.addEventListener('touchcancel', (e) => this.handleEnd(e), { passive: false });
 
                 // Mouse events
                 this.container.addEventListener('mousedown', (e) => this.handleStart(e));
@@ -195,21 +198,46 @@
             }
 
             handleStart(e) {
-                e.preventDefault();
-                const touch = e.type === 'mousedown' ? e : e.touches[0];
-                if (touch.target === this.thumb || touch.target === this.base) {
-                    this.active = true;
-                    this.container.style.opacity = '1';
+                if (this.active) return;   // already own a touch
+                if (e.type === 'mousedown') {
+                    if (e.target === this.thumb || e.target === this.base) {
+                        e.preventDefault();
+                        this.active = true;
+                        this.touchId = 'mouse';
+                        this.container.style.opacity = '1';
+                    }
+                    return;
                 }
+                // Touch: claim the new touch that landed on THIS joystick, by id,
+                // so the two joysticks can be driven independently (multi-touch).
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i];
+                    if (this.container.contains(t.target)) {
+                        e.preventDefault();
+                        this.active = true;
+                        this.touchId = t.identifier;
+                        this.container.style.opacity = '1';
+                        break;
+                    }
+                }
+            }
+
+            // Return this joystick's tracked pointer from the event, or null.
+            getPoint(e) {
+                if (this.touchId === 'mouse') return e;
+                for (let i = 0; i < e.touches.length; i++) {
+                    if (e.touches[i].identifier === this.touchId) return e.touches[i];
+                }
+                return null;
             }
 
             handleMove(e) {
                 if (!this.active) return;
+                const touch = this.getPoint(e);
+                if (!touch) return;   // a different finger / joystick moved
                 e.preventDefault();
-                
-                const touch = e.type === 'mousemove' ? e : e.touches[0];
+
                 const rect = this.base.getBoundingClientRect();
-                
                 let x = touch.clientX - rect.left;
                 let y = touch.clientY - rect.top;
 
@@ -239,8 +267,18 @@
 
             handleEnd(e) {
                 if (!this.active) return;
+                if (this.touchId === 'mouse') {
+                    if (e.type !== 'mouseup') return;
+                } else {
+                    let ended = false;
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === this.touchId) { ended = true; break; }
+                    }
+                    if (!ended) return;   // some other finger lifted
+                }
                 e.preventDefault();
                 this.active = false;
+                this.touchId = null;
                 this.container.style.opacity = '0.7';
 
                 // Reset thumb position
