@@ -24,8 +24,10 @@
 #define CAM_PIN_PCLK  13
 
 // ---- Drive peripherals (wired by user to these free GPIOs) ----
-#define MOTOR_SPEED_PIN   1   // shared PWM enable for BOTH motor drivers
-#define RIGHT_MOTOR_IN1  41
+// Motor speed is sign-magnitude PWM on the four direction inputs (2 per motor);
+// the driver's enable is tied HIGH to 3.3V in hardware, so GPIO 1 is unused/free.
+#define MOTOR_SPEED_PIN   1   // SPARE (motor enable tied to 3.3V in hardware)
+#define RIGHT_MOTOR_IN1  41   // PWM, sign-magnitude
 #define RIGHT_MOTOR_IN2  42
 #define LEFT_MOTOR_IN1   40
 #define LEFT_MOTOR_IN2   39

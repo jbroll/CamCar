@@ -2,76 +2,97 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-CamCar is firmware for an ESP32-CAM remote-control car: it streams live JPEG video and accepts drive/servo/light commands over WebSockets, serving a self-contained web UI from flash. Built as an Arduino sketch compiled with `arduino-cli`.
+CamCar is firmware for a **Freenove ESP32-S3-WROOM CAM** remote-control car: it streams live JPEG video and accepts drive/camera-gimbal commands over WebSockets, serving a self-contained web UI from flash, plus a high-res still endpoint. Built as an Arduino sketch compiled with `arduino-cli`.
 
-## Build & Run
+> The project was **ported from the classic AI-Thinker ESP32-CAM to the Freenove ESP32-S3-WROOM CAM**. Anything that still says ESP32-CAM in comments/README is stale; this file and `src/board_config.h` are authoritative.
+
+## Build & flash
 
 All workflow goes through the `Makefile`:
 
-- `make build` — regenerate embedded web assets, then `arduino-cli compile` for FQBN `esp32:esp32:esp32cam`
-- `make upload` — build + flash over `PORT` (default `/dev/ttyUSB0`)
-- `make monitor` — serial monitor at 115200 baud
-- `make try` — upload then monitor
-- `make install` — install the esp32 core and libs (ESP32Servo, ESPAsyncWebServer, AsyncTCP) via `arduino-cli`
-- `make ports` — list connected boards
-- `make tester` — create a Python venv and run `tester.py`, a FastAPI mock server (port 8000) that stubs the `/CarInput` and `/Camera` WebSockets so the UI can be exercised without hardware. Note: `tester.py` opens `index.html` from the cwd, but the real file lives in `webroot/` — run from there or adjust the path.
+- `make build` — regenerate embedded web assets, then `arduino-cli compile`
+- `make upload` — build + flash over `PORT` (`/dev/ttyACM0`)
+- `make monitor` — serial monitor at 115200 (**see the serial-resets-the-board gotcha below**)
+- `make install` — install esp32 core + libs (ESP32Servo, "Async TCP", "ESP Async WebServer")
+- `make tester` — Python FastAPI mock (`tester.py`) to exercise the UI without hardware
 
-Requires esp32 core **3.x** (`make install` pulls the latest; verified against 3.3.5–3.3.8). The firmware uses the **pin-based LEDC API** (`ledcAttach`/`ledcAttachChannel`/`ledcWrite(pin, …)`) introduced in core 3.x — the old channel-based `ledcSetup`/`ledcAttachPin` were removed and will not compile.
+**FQBN:** `esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app`
+- **OPI PSRAM is required** (camera framebuffers, incl. UXGA snapshots).
+- `huge_app` partition (the binary exceeds the default 1.25 MB app slot).
+- Requires esp32 core **3.x** (verified 3.3.5–3.3.8). Uses the **pin-based LEDC API** (`ledcAttach`/`ledcAttachChannel`/`ledcWrite(pin,…)`); the old `ledcSetup`/`ledcAttachPin` were removed in core 3.x and won't compile.
 
-`make build` (i.e. `arduino-cli compile`) is the primary way to verify changes **without a board** — only `upload`/`monitor` need hardware. There is no unit-test suite. `esp32-em.sh` is an incomplete QEMU experiment and does not work.
+`make build` (`arduino-cli compile`) is the primary way to verify **without a board** — only `upload`/`monitor` need hardware. No unit-test suite. `esp32-em.sh` (QEMU) does not work.
 
-WiFi credentials are **not** in source (see *WiFi provisioning* below). Copy `.env.example` → `.env` (gitignored), set `WIFI_SSID`/`WIFI_PASSWORD`, and `make build` bakes them into `src/gen/secrets.h`. With no `.env`, the firmware boots into a setup SoftAP instead.
+**WiFi credentials** are not in source: copy `.env.example` → `.env` (gitignored), set `WIFI_SSID`/`WIFI_PASSWORD`; `make build` bakes them into `src/gen/secrets.h`. No `.env` → boots a setup SoftAP. (See *WiFi provisioning*.)
 
-## Embedded web-asset pipeline (most important architecture)
+## Hardware & pin map (`src/board_config.h`)
 
-The web UI in `webroot/` (`index.html`, `*.js`, `*.css`, `config.html`) is **not** served from a filesystem. At build time each file is gzipped and emitted as a C++ source file under `src/gen/`:
+`board_config.h` is the **single source of truth** for every GPIO (camera + drive). The camera is onboard (no wiring). Drive hardware wires to:
 
-- `file-entry.sh <webroot/file>` → `src/gen/<name>_file.cpp` + `.h`. It gzips the file into a `data_array[]` byte array (`.h`) and wraps it in a `FileEntry` PROGMEM struct (path, MIME type, gzipped flag, size, data pointer). The URL is derived from the filename (`index.html` → `/`).
-- `file-system.sh` scans `src/gen/*.cpp` for the `extern ... PROGMEM` declarations and generates `src/gen/file-entries.cpp`, the `FileSystem::files[]` null-terminated pointer array.
-- `gen-secrets.sh` reads the untracked `.env` and emits `src/gen/secrets.h` (`WIFI_SSID_DEFAULT` / `WIFI_PASSWORD_DEFAULT`); a missing/empty `.env` yields empty defaults.
+| Signal | GPIO | Notes |
+|---|---|---|
+| Right motor IN1 / IN2 | 41 / 42 | PWM (sign-magnitude) |
+| Left motor IN1 / IN2 | 40 / 39 | PWM |
+| Motor driver **EN** | — | **tie HIGH to 3.3 V in hardware** (L298N: leave the ENA/ENB jumpers on). GPIO 1 is then **free**. |
+| Pan / Tilt servo | 47 / 21 | |
+| Status LED | 2 | onboard LED (WiFi-connect blink) |
 
-The `Makefile` runs all three automatically (`gen-sources` target) before compiling, keyed off `webroot/` and `.env` mtimes. **`src/gen/` is entirely generated — never edit it by hand; edit `webroot/` (or `.env`) and rebuild.** `src/gen/` is gitignored (the generated files used to be committed; they were untracked deliberately, so a clone builds them via `make`). Building in the **Arduino IDE** would not regenerate them — use `make`/`arduino-cli`.
+Camera GPIOs (Freenove S3, verified): XCLK=15, SIOD=4, SIOC=5, VSYNC=6, HREF=7, PCLK=13, D0–D7=11/9/8/10/12/18/17/16, PWDN/RESET=-1. **microSD is sacrificed** (its pins 39/40 are reused for the left motor). NeoPixel (48) is free.
 
-At runtime, `WebHandler::begin` (`src/WebHandler.h`) installs an `onNotFound` catch-all that looks up the request URL in `FileSystem::findFileEntry`, optionally runs a registered `ContentProcessor` template processor, and serves the PROGMEM bytes with a `Content-Encoding: gzip` header. This is how all static content reaches the browser.
+**LEDC channel budget (8 total on S3):** camera XCLK uses channel 0; motors use explicit channels **2–5** (`ledcAttachChannel`, deliberately avoiding ch 0); ESP32Servo auto-allocates the rest. Keep motor channels explicit — auto-allocation can collide with the camera's ch 0.
 
-## Runtime structure (`CamCar.ino`)
+## ⚠️ The XCLK lesson (most important thing in this repo)
 
-- **Networking:** an `AsyncWebServer` on port 80 plus two `AsyncWebSocket`s — `/Camera` (video out) and `/CarInput` (commands in). `setupWiFi()` reads credentials from NVS and joins as a station, falling back to a setup SoftAP (see *WiFi provisioning*).
-- **Control protocol:** `/CarInput` receives comma-separated `key,value` text frames. Keys: `MoveCar` (direction enum UP/DOWN/LEFT/RIGHT/STOP), `Speed`, `Light` (both PWM duty), `Pan`, `Tilt` (servo angles). On disconnect the car is stopped and servos re-centered.
-- **Motors:** `CamCar.ino` drives the two motors directly via `motorPins` GPIO + a shared PWM speed channel on explicit LEDC channel 2 (`rotateMotor`/`moveCar`); both motor-enable pins are wired to the same GPIO, so the speed PWM is attached once. The camera driver uses LEDC channel 0, so motor/light PWM use explicit channels 2/3 (`ledcAttachChannel`) to avoid collision. The `DifferentialDrive`/`DCMotor` classes (`src/TankDrive.h`, `src/DCMotor.h`) are a cleaner alternative abstraction that **exists but is currently unused** by the sketch.
-- **Main loop:** just cleans up WS clients and calls `camera.sendFrame()`.
+The camera XCLK frequency is set to **8 MHz** in `Camera.cpp` (`XCLK_FREQ_HZ`). **Do not raise it.** At 10/20 MHz the LEDC-generated clock **radiates into the 2.4 GHz WiFi band** and destroys throughput (idle ping 300–1000 ms, erratic 0–2 fps, TCP retransmits) — see espressif/arduino-esp32 #5834. 8 MHz is a documented "clean" frequency. This was the root cause of severe streaming lag and cost a long debugging session; it is an **RF/hardware** issue, not CPU/task contention (so core-pinning etc. won't help). Tradeoff: the sensor is clock-limited to ~10 fps at 8 MHz, but resolution is then nearly free up to XGA (bandwidth has huge headroom).
 
-## Adaptive camera streaming (`src/Camera*`)
+## Camera streaming (`src/Camera.h` / `Camera.cpp`)
 
-`CameraHandler` (`src/Camera.h` / `Camera.cpp`) owns capture and streaming with automatic quality adaptation:
+`CameraHandler` owns capture + streaming. Init is at **UXGA** so the framebuffer fits any resolution; the sensor then runs at the streaming size. PSRAM framebuffer, `fb_count=2`, `GRAB_WHEN_EMPTY`.
 
-- `QUALITY_LEVELS[]` (`src/CameraQuality.h`) is an ordered table of 14 `StreamParameters` (`src/CameraParams.h`) — framesize / JPEG quality / FPS / bandwidth tiers from CIF up to VGA. `mCurrentQualityLevel` indexes it.
-- `sendFrame()` paces to target FPS, captures a JPEG, and pushes it over the `/Camera` WebSocket in `WS_BUFFER_SIZE` chunks; one frame transmits at a time (`mTransmissionInProgress`).
-- `checkCongestion()` watches the WebSocket client queue and steps the quality level down on backpressure / up after a stability period (`QUALITY_STABILITY_PERIOD_MICROS`, `UPGRADE_STABILITY_PERIOD_MICROS`). Capture failures are tracked and retried.
+- **`sendFrame()`** (called from `loop()`): paces to `mTargetFPS`, captures, sends the whole JPEG as one `wsCamera.binary()` message, then **returns the fb immediately** (binary() copies the data — do *not* hold the camera buffer; holding it serialized the pipeline and caused multi-second stalls). Under backpressure (`queueLen() > MAX_INFLIGHT_FRAMES`) it **drops** a frame to bound latency.
+- **Resolution control** is by **ladder index**, NOT raw `framesize_t` value (see enum gotcha). `RES_LADDER` = QVGA/CIF/VGA/SVGA/XGA; `setResolution(index)` sets the ceiling and jumps to it.
+- **Auto-adapt** (`adaptAndReport`, every 2 s): if >25 % of frame-slots were dropped, step the resolution **down** one rung; after 2 clean windows step **up** toward the user-selected ceiling. Reuses the frame-drop as the congestion signal; dormant on a clear link. Replaced an over-built 14-level quality controller that was removed.
+- **Stream report:** every 2 s `sendFrame` prints `[stream] <fps> | <mode> | dropped <n> | queue <n> | RSSI <dBm>` and `[adapt]` on each step.
+
+**Snapshot:** `GET /snapshot?res=<0–4>[&download=1]` (handler in `CamCar.ino`) → `CameraHandler::captureSnapshot(index)`. It cooperatively **pauses** `sendFrame` (a flag the loop acknowledges), switches the sensor up to `SNAP_LADDER` size (VGA…**UXGA 1600×1200**) at higher quality, grabs one frame, restores, resumes. The fb is streamed via a filler response and freed after the last chunk. UI has a snapshot picker + View/Save buttons.
+
+## Motor & servo control (`CamCar.ino`)
+
+**Proportional differential (tank) drive via sign-magnitude PWM.** No separate enable channels: enable is tied HIGH in hardware, and each motor's speed is PWM on whichever **input** matches its direction (`driveMotor(in1,in2,speed)`; PWM the active input, hold the other low). This gives independent per-track proportional speed.
+
+- `tankDrive(x,y)` arcade-mixes throttle (y) and turn (x) → left/right speeds.
+- `cameraControl(x,y)` → pan/tilt servo angles.
+
+**Control protocol** (`/CarInput` WebSocket text frames):
+- `tank <x> <y>` and `camr <x> <y>` — space-delimited, x/y in −100..100 (sent by the UI joysticks).
+- `Resolution,<index>` — comma-delimited (the dropdown).
+- The parser reads the first whitespace token; if it's `tank`/`camr` it dispatches those, else it falls back to comma `key,value`. Disconnect → safe-stop + center servos.
+
+## Embedded web-asset pipeline
+
+`webroot/` files are gzipped at build time into C++ under `src/gen/` and served from PROGMEM (no filesystem):
+- `file-entry.sh` → `<name>_file.cpp/.h` (gzipped byte array + `FileEntry` struct).
+- `file-system.sh` → `file-entries.cpp` (the `FileSystem::files[]` table).
+- `gen-secrets.sh` → `secrets.h` from `.env`.
+
+The `Makefile` `gen-sources` target runs all three before compiling. **`src/gen/` is generated and gitignored — never edit by hand; edit `webroot/`/`.env` and rebuild.** The Arduino IDE won't regenerate them — use `make`. `WebHandler::begin` serves them via an `onNotFound` lookup with `Content-Encoding: gzip`.
+
+> The live camera renderer is the **inline** handler in `webroot/index.html` (img.src + revoked object URLs). `webroot/Camera.js` is **dead code, not loaded** — don't edit it expecting changes.
+
+## WiFi provisioning (`setupWiFi()`)
+
+`.env` → `secrets.h` (build-time defaults) → seeded into NVS on first boot → NVS is authoritative. STA join with a 15 s timeout; on no-creds or timeout, a setup SoftAP (`CamCar-setup` / `camcarsetup`) serves `http://192.168.4.1/config`. `WiFi.setSleep(false)` is set **after** association (it doesn't stick before). RSSI is logged at connect. Build-time defaults are recoverable from a flash dump (out of git, not secret from physical access).
 
 ## Config persistence (`src/PrefEdit.h`)
 
-`PrefEdit` stores key/values in ESP32 NVS (`Preferences`, namespace `"config"`; keys listed in `Prefs.h`). `begin(server, "/config", configParams)` registers a `ContentProcessor` so `config.html` template variables are filled with stored values, and handles `HTTP_POST /config` to update them (same `FileSystem` processor hook as above). API split so boot code can use it before the server exists:
+NVS key/values via `Preferences` (namespace `config`, keys in `Prefs.h`), editable at `/config`. `initStorage()` opens NVS before the server exists (used by `setupWiFi()` via `get`/`set`); changing `ssid`/`password` schedules a deferred reboot via `PrefEdit::loop()` so the HTTP response flushes first.
 
-- `initStorage()` — opens NVS; idempotent (guarded by `_inited`), callable before `begin()`.
-- `get(key, def)` / `set(key, value)` — public read/write, used by `setupWiFi()` to read and seed credentials.
-- `handleUpdate()` — on a `ssid`/`password` change, schedules a deferred reboot (`_rebootAt`); `PrefEdit::loop()` (called from the main `loop()`) performs `ESP.restart()` ~1s later so the HTTP response flushes first. New WiFi credentials only take effect on reconnect, hence the reboot.
+## Gotchas & hard-won lessons
 
-Note: `resolution`/`framesize`/`quality` are collected by `/config` and stored, but **not yet consumed** by `Camera.cpp` — a known stored-but-unused gap.
-
-## WiFi provisioning (`CamCar.ino` `setupWiFi()`)
-
-Credentials live in NVS, never in source. Boot sequence:
-
-1. `.env` (untracked) → `src/gen/secrets.h` at build time (`WIFI_SSID_DEFAULT`/`WIFI_PASSWORD_DEFAULT`).
-2. On **first boot**, if NVS has no `ssid` and a build-time default exists, it's seeded into NVS. NVS is the source of truth thereafter (survives reflashes; `/config` edits stick).
-3. Join as a station with a **15s timeout** (`WIFI_CONNECT_TIMEOUT_MS`) — no more infinite connect loop.
-4. If no stored SSID **or** the join times out, start a **setup SoftAP** (`CamCar-setup` / `camcarsetup`) so `http://192.168.4.1/config` is reachable to enter credentials, which then reboots into station mode.
-
-So a fresh device with no `.env` is self-provisioning over SoftAP; a developer sets `.env` for convenience. Caveat: build-time defaults are compiled into the firmware image and recoverable from a flash dump — out of git, not secret from physical access.
-
-## Conventions & gotchas
-
-- Header-only classes use inline static-member definitions in the `.h` (e.g. `PrefEdit::_prefs`, `_rebootAt`) — include such a header in exactly one translation unit to avoid duplicate-symbol link errors.
-- The repo root holds stale snapshots (`*.ino-save`, `*.ino.save`, `SAVE.ino.save`, `Test-ino.save`) — these are not built; only `CamCar.ino` and `src/` compile.
-- `README.md` references some filenames that have since changed (`test_serv.py` → `tester.py`, `gzipper.py` → logic now inside `file-entry.sh`). Trust the `Makefile` and this file over the README for the current build flow.
+- **Opening a serial monitor RESETS the board** (the CH343 toggles the reset line on port open) → it reboots and the video stream drops. So serial console and live video are mutually exclusive. Use the **in-browser stats overlay** (fps/resolution/KB, computed client-side) for live monitoring, not `make monitor`.
+- **`framesize_t` enum values are version-dependent.** This esp32-camera build renumbered them (CIF=8, VGA=10, etc.), so the classic JS values (VGA=8…) selected the wrong size or were rejected. **Always use ladder indices** across the JS/firmware boundary, mapped through symbolic `FRAMESIZE_*` constants — never raw enum integers.
+- **Diagnosing WiFi vs. firmware:** `ping` the board (bypasses camera/WS/browser). The dev laptop is likely on **5 GHz**; the ESP32-S3 is **2.4 GHz-only**, so ping the board *and* the gateway to compare. Disabling the camera and re-pinging isolates camera-clock interference from RF environment.
+- **Single camera viewer:** the firmware streams to one `mClientId`; a second `/Camera` connection steals the stream. Two tabs/probes fight each other.
+- **WiFi credentials were committed in plaintext historically and were scrubbed from git history** (force-pushed). Treat the old `lucky7`/`snowblower` password as compromised — rotate it. `.env` and `src/gen/secrets.h` are gitignored.
+- Header-only classes define inline static members in the `.h` (`PrefEdit`) — include in exactly one TU.
+- The repo root holds stale `*.ino-save` snapshots; only `CamCar.ino` + `src/` build. `README.md` is outdated — trust the `Makefile` and this file.

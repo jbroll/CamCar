@@ -144,11 +144,9 @@ void setUpPinModes() {
   panServo.attach(PAN_PIN);
   tiltServo.attach(TILT_PIN);
 
-  // Enable pin(s) tied HIGH: the H-bridge is always enabled and speed comes
-  // from PWM on the direction inputs (sign-magnitude). Both motor enables share
-  // this GPIO.
-  pinMode(MOTOR_SPEED_PIN, OUTPUT);
-  digitalWrite(MOTOR_SPEED_PIN, HIGH);
+  // The H-bridge enable is tied HIGH to 3.3V in hardware (always enabled), so
+  // the firmware leaves it alone -- GPIO 1 (MOTOR_SPEED_PIN) is free. Speed
+  // comes from PWM on the direction inputs (sign-magnitude).
 
   // PWM the four direction inputs on explicit LEDC channels 2-5 (avoiding the
   // camera's channel 0). Two channels per motor give independent proportional
