@@ -11,22 +11,19 @@ var connState = { cam: false, ctl: false };
 var deviceUptimeSec = null, uptimeSyncMs = 0;  // device uptime, resynced from status frames
 
 function renderConn() {
-    var el = document.getElementById('connText');
-    if (!el) return;
-    if (connState.cam && connState.ctl) { el.textContent = 'Connected'; return; }
-    var down = [];
-    if (!connState.cam) down.push('Camera');
-    if (!connState.ctl) down.push('Controls');
-    el.textContent = down.join(' & ') + ' reconnecting…';
+    // No status text -- the connection state just tints the whole status line:
+    // green when fully connected, red when the camera or control link is down.
+    var el = document.getElementById('connectionStatus');
+    if (el) el.classList.toggle('disconnected', !(connState.cam && connState.ctl));
 }
 
 // Stream stats overlay (measured in-browser; no serial needed).
 function updateStreamStats() {
     var kb = statFrames ? (statBytes / statFrames / 1024) : 0;
-    var img = document.getElementById("cameraImage");
-    var res = img.naturalWidth ? img.naturalWidth + "x" + img.naturalHeight : "--";
+    // Resolution is shown in the dropdown now (synced from the "res" status
+    // frame), so the status line is just fps + bytes/frame.
     document.getElementById("streamStats").textContent =
-        statFrames + " fps   " + res + "   " + kb.toFixed(1) + " KB/f";
+        statFrames + " fps   " + kb.toFixed(1) + " KB/f";
     statFrames = 0;
     statBytes = 0;
 }
@@ -51,6 +48,11 @@ function handleStatus(msg) {
                 if (sel.options[i].value === v) { sel.value = v; break; }
             }
         }
+    } else if (msg.indexOf("res ") === 0) {
+        // Show the current (possibly auto-adapted) resolution in the dropdown.
+        var rv = msg.slice(4).trim();
+        var rsel = document.getElementById("resolutionSelect");
+        if (rsel && rsel.value !== rv) rsel.value = rv;
     } else if (msg.indexOf("fps ") === 0) {
         var fv = msg.slice(4).trim();
         var fsel = document.getElementById("fpsSelect");
