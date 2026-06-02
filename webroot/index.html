@@ -9,18 +9,23 @@
     <div id="connectionStatus">
         <span id="connText">Connecting...</span>
         <div id="streamStats">--</div>
+        <div id="uptime">up --</div>
     </div>
 
     <div id="videoContainer">
         <img id="cameraImage" src="" alt="Camera Stream">
-        <select id="resolutionSelect" title="Camera resolution">
-            <option value="0">QVGA 320x240</option>
-            <option value="1">CIF 400x296</option>
-            <option value="2" selected>VGA 640x480</option>
-            <option value="3">SVGA 800x600</option>
-            <option value="4">XGA 1024x768</option>
-        </select>
+        <div id="resBar">
+            <button id="lockBtn" type="button" title="Lock resolution (disable auto-adapt)">&#128275;</button>
+            <select id="resolutionSelect" title="Camera resolution (max)">
+                <option value="0">QVGA 320x240</option>
+                <option value="1">CIF 400x296</option>
+                <option value="2" selected>VGA 640x480</option>
+                <option value="3">SVGA 800x600</option>
+                <option value="4">XGA 1024x768</option>
+            </select>
+        </div>
         <div id="snapshotBar">
+            <button id="lightBtn" type="button" title="Headlight on/off">&#128161;</button>
             <select id="snapResSelect" title="Snapshot resolution">
                 <option value="0">VGA</option>
                 <option value="1">SVGA</option>

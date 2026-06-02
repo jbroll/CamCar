@@ -55,6 +55,7 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mLevelIdx(0)
     , mSentSlots(0)
     , mDroppedSlots(0)
+    , mAutoAdapt(true)
     , mClearWindows(0)
     , mCongestedWindows(0)
     , mLastAdaptTime(0)
@@ -219,7 +220,8 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     // Auto-adapt between the floor and the user-selected ceiling, with
     // hysteresis to avoid oscillation: downshift only after *sustained*
     // congestion, and suppress upshifts for a cooldown after a downshift.
-    if (total > 0) {
+    // Skipped entirely when locked (mAutoAdapt false) -- resolution stays put.
+    if (mAutoAdapt && total > 0) {
         bool congested = (dropped * 4 > total);   // >25% of slots dropped
         if (congested) {
             mClearWindows = 0;
@@ -250,6 +252,12 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     Serial.printf("[stream] %.1f fps | %s q%u target %ufps | dropped %u | queue %u | RSSI %lddBm\n",
                   fps, framesizeName(mFrameSize), mJpegQuality, mTargetFPS,
                   dropped, client->queueLen(), (long)WiFi.RSSI());
+
+    // Push device uptime (seconds since boot) to the page as a text frame.
+    // The browser distinguishes these from binary JPEG frames by type.
+    char status[24];
+    snprintf(status, sizeof(status), "up %lu", (unsigned long)(now / 1000000));
+    client->text(status);
 }
 
 bool CameraHandler::sendFrame() {

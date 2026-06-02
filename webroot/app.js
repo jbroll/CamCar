@@ -8,6 +8,7 @@ var websocketCamera = null;
 var websocketCarInput = null;
 var statFrames = 0, statBytes = 0, lastFrameMs = 0;
 var connState = { cam: false, ctl: false };
+var deviceUptimeSec = null, uptimeSyncMs = 0;  // device uptime, resynced from status frames
 
 function renderConn() {
     var el = document.getElementById('connText');
@@ -30,6 +31,31 @@ function updateStreamStats() {
     statBytes = 0;
 }
 
+// Text status frames from the device (sent on the camera socket alongside the
+// binary JPEG frames). Currently just "up <seconds>" device uptime.
+function handleStatus(msg) {
+    if (msg.indexOf("up ") === 0) {
+        deviceUptimeSec = parseInt(msg.slice(3), 10);
+        uptimeSyncMs = Date.now();
+    }
+}
+
+function fmtUptime(s) {
+    var d = Math.floor(s / 86400); s -= d * 86400;
+    var h = Math.floor(s / 3600);  s -= h * 3600;
+    var m = Math.floor(s / 60);    s -= m * 60;
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return (d > 0 ? d + "d " : "") + p(h) + ":" + p(m) + ":" + p(s);
+}
+
+// Tick locally each second; the device resyncs us every couple of seconds.
+function renderUptime() {
+    var el = document.getElementById("uptime");
+    if (deviceUptimeSec === null) { el.textContent = "up --"; return; }
+    var live = deviceUptimeSec + Math.floor((Date.now() - uptimeSyncMs) / 1000);
+    el.textContent = "up " + fmtUptime(live);
+}
+
 // Joysticks: motion -> tank drive, camera -> pan/tilt.
 const motionJoystick = new Joystick(
     document.getElementById('motionJoystick'),
@@ -47,6 +73,7 @@ window.onload = function () {
         onopen: function () { connState.cam = true; renderConn(); },
         onclose: function () { connState.cam = false; renderConn(); },
         onmessage: function (event) {
+            if (typeof event.data === "string") { handleStatus(event.data); return; }
             lastFrameMs = Date.now();
             statFrames++;
             statBytes += event.data.size;
@@ -85,9 +112,28 @@ window.onload = function () {
     });
 
     setInterval(updateStreamStats, 1000);
+    setInterval(renderUptime, 1000);
 
     document.getElementById("resolutionSelect").addEventListener("change", function () {
         if (websocketCarInput) websocketCarInput.send("Resolution," + this.value);
+    });
+
+    // Lock toggle: freeze the current resolution (disable auto-adapt). Manual
+    // resolution changes still work while locked.
+    var locked = false;
+    document.getElementById("lockBtn").addEventListener("click", function () {
+        locked = !locked;
+        this.classList.toggle("active", locked);
+        this.innerHTML = locked ? "&#128274;" : "&#128275;";  // closed / open padlock
+        if (websocketCarInput) websocketCarInput.send("Lock," + (locked ? 1 : 0));
+    });
+
+    // Headlight toggle.
+    var lightOn = false;
+    document.getElementById("lightBtn").addEventListener("click", function () {
+        lightOn = !lightOn;
+        this.classList.toggle("active", lightOn);
+        if (websocketCarInput) websocketCarInput.send("Light," + (lightOn ? 1 : 0));
     });
 
     function snapUrl(download) {

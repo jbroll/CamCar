@@ -104,6 +104,12 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
           int valueInt = atoi(value.c_str());
           if (key == "Resolution") {
             camera.setResolution((uint8_t)valueInt);  // ladder index (0..N-1)
+          } else if (key == "Lock") {
+            // Lock,1 -> freeze resolution (disable auto-adapt); Lock,0 -> resume
+            camera.setAdaptEnabled(valueInt == 0);
+          } else if (key == "Light") {
+            // Light,1 -> headlight on; Light,0 -> off
+            if (LIGHT_PIN >= 0) digitalWrite(LIGHT_PIN, valueInt > 0 ? HIGH : LOW);
           }
         }
       }

@@ -35,6 +35,10 @@ public:
     bool setResolution(uint8_t ladderIndex);
     framesize_t getResolution() const;
 
+    // When disabled, the resolution is locked: auto-adapt no longer steps it
+    // up or down (manual setResolution still works).
+    void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }
+
     bool sendFrame();
 
     // Capture one still at SNAP_LADDER[snapIndex] (up to UXGA). Briefly pauses
@@ -93,6 +97,7 @@ private:
     uint8_t mLevelIdx;       // current resolution (<= ceiling)
     uint32_t mSentSlots;     // frames sent this adapt window
     uint32_t mDroppedSlots;  // frames dropped (backpressure) this adapt window
+    bool mAutoAdapt;             // when false the resolution is locked
     uint8_t mClearWindows;       // consecutive clean windows (upshift hysteresis)
     uint8_t mCongestedWindows;   // consecutive congested windows (downshift hysteresis)
     int64_t mLastAdaptTime;
