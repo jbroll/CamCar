@@ -96,7 +96,7 @@ private:
     static constexpr uint32_t XCLK_FREQ_HZ = 8000000;
     static constexpr framesize_t DEFAULT_FRAMESIZE = FRAMESIZE_VGA;
     static constexpr uint8_t DEFAULT_JPEG_QUALITY = 12;
-    static constexpr uint8_t DEFAULT_FPS = 15;
+    static constexpr uint8_t DEFAULT_FPS = MAX_FPS;  // ceiling; the XCLK clock paces below it
     // Max queued frames before we drop one (bounds latency under backpressure).
     static constexpr uint32_t MAX_INFLIGHT_FRAMES = 3;
     static constexpr int64_t ADAPT_INTERVAL_US = 2000000;  // re-evaluate resolution every 2s

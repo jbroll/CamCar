@@ -348,7 +348,9 @@ void setup(void) {
 
   WebHandler::begin(server);
 
-  camera.setFPS(10);
+  // Pacing cap is just a high ceiling -- the camera clock (XCLK, via the
+  // blocking grab) is the real pacer, so fps follows the selected XCLK.
+  camera.setFPS(CameraHandler::MAX_FPS);
   wsCamera.onEvent(onCameraWebSocketEvent);
   server.addHandler(&wsCamera);
 
