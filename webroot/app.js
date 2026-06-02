@@ -130,6 +130,16 @@ window.onload = function () {
         if (websocketCarInput) websocketCarInput.send("Xclk," + this.value);
     });
 
+    // Camera stop/start: stopping deinits the camera (XCLK off) so its 2.4GHz
+    // radiation clears and control gets solid; tap again to restart.
+    var camOn = true;
+    document.getElementById("camBtn").addEventListener("click", function () {
+        camOn = !camOn;
+        this.innerHTML = camOn ? "&#9209;" : "&#9654;";   // stop square / play
+        this.classList.toggle("active", !camOn);
+        if (websocketCarInput) websocketCarInput.send("Camera," + (camOn ? 1 : 0));
+    });
+
     // Lock toggle: freeze the current resolution (disable auto-adapt). Manual
     // resolution changes still work while locked.
     var locked = false;

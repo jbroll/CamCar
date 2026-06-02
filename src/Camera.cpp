@@ -64,6 +64,7 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mPauseRequested(false)
     , mPaused(false)
     , mHttpStreaming(false)
+    , mCameraStopped(false)
     , mSharedIdx(0)
     , mSharedSeq(0)
     , mWsSentSeq(0)
@@ -176,6 +177,12 @@ bool CameraHandler::begin() {
 // touched, so the board stays reachable -- unless the new XCLK itself swamps
 // 2.4 GHz WiFi, in which case recover by reflashing.
 bool CameraHandler::setXclkFreq(uint32_t hz) {
+    mXclkFreq = hz;
+    if (mCameraStopped) {           // record only; applied on next start
+        Serial.printf("[xclk] -> %lu Hz (stored; camera stopped)\n", (unsigned long)hz);
+        return true;
+    }
+
     // Pause the loop's grab (snapshot handshake) so we don't deinit mid-capture.
     mPauseRequested = true;
     int64_t deadline = esp_timer_get_time() + 300000;  // 300ms safety net
@@ -183,12 +190,34 @@ bool CameraHandler::setXclkFreq(uint32_t hz) {
         delay(1);
     }
 
-    mXclkFreq = hz;
     bool ok = initSensor();
 
     mPauseRequested = false;
     Serial.printf("[xclk] -> %lu Hz (%s)\n", (unsigned long)hz, ok ? "ok" : "FAILED");
     return ok;
+}
+
+// Stop the camera (deinit -> XCLK off -> 2.4 GHz radiation stops) or restart it.
+void CameraHandler::setCameraEnabled(bool on) {
+    if (on) {
+        if (!mCameraStopped) return;
+        mCameraStopped = false;
+        initSensor();                       // restart at the current mXclkFreq
+        Serial.println("[cam] started");
+        return;
+    }
+    if (mCameraStopped) return;
+
+    // Pause the loop's grab, then power down so the XCLK clock stops.
+    mPauseRequested = true;
+    int64_t deadline = esp_timer_get_time() + 300000;
+    while (!mPaused && esp_timer_get_time() < deadline) {
+        delay(1);
+    }
+    esp_camera_deinit();
+    mCameraStopped = true;
+    mPauseRequested = false;
+    Serial.println("[cam] stopped (XCLK off, RF cleared)");
 }
 
 // Called from the MJPEG producer (async task). Copies the frame into the
@@ -361,6 +390,10 @@ bool CameraHandler::sendFrame() {
         return false;
     }
     mPaused = false;
+
+    if (mCameraStopped) {
+        return false;                        // camera deinited (XCLK off)
+    }
 
     // HTTP-MJPEG (/stream) owns the camera grab; instead of grabbing, forward
     // its published frames to the WS client so both viewers see the same video.

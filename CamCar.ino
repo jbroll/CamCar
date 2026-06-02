@@ -1,6 +1,7 @@
 #include "esp_camera.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <iostream>
@@ -121,6 +122,9 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
             if (mhz < 2.0f)  mhz = 2.0f;
             if (mhz > 20.0f) mhz = 20.0f;
             camera.setXclkFreq((uint32_t)(mhz * 1000000.0f));
+          } else if (key == "Camera") {
+            // Camera,0 -> stop (deinit, XCLK off, clears WiFi); Camera,1 -> start
+            camera.setCameraEnabled(valueInt != 0);
           } else if (key == "Lock") {
             // Lock,1 -> freeze resolution (disable auto-adapt); Lock,0 -> resume
             camera.setAdaptEnabled(valueInt == 0);
@@ -210,6 +214,18 @@ void startSetupAP() {
 // Read WiFi credentials from NVS (seeded from build-time .env defaults on
 // first boot) and join as a station. With no stored SSID, or if the join
 // times out, fall back to the setup SoftAP instead of blocking forever.
+// Network name: the "hostname" pref if set, else "camcar-<low 3 MAC bytes>" so
+// multiple cars on one LAN don't collide (e.g. camcar-3c71bf).
+String networkHostname() {
+  String h = PrefEdit::get("hostname");
+  if (h.length() > 0) return h;
+  uint64_t mac = ESP.getEfuseMac();
+  char buf[20];
+  snprintf(buf, sizeof(buf), "camcar-%02x%02x%02x",
+           (uint8_t)(mac >> 0), (uint8_t)(mac >> 8), (uint8_t)(mac >> 16));
+  return String(buf);
+}
+
 void setupWiFi() {
   PrefEdit::initStorage();
 
@@ -229,9 +245,11 @@ void setupWiFi() {
     return;
   }
 
+  String host = networkHostname();
   WiFi.mode(WIFI_STA);
+  WiFi.setHostname(host.c_str());   // DHCP option 12 -> router shows the name
   WiFi.begin(ssid.c_str(), password.c_str());
-  Serial.printf("Connecting to WiFi network '%s' ", ssid.c_str());
+  Serial.printf("Connecting to WiFi network '%s' as '%s' ", ssid.c_str(), host.c_str());
 
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED &&
@@ -248,6 +266,10 @@ void setupWiFi() {
     Serial.print("\nConnected to the WiFi network at ");
     Serial.println(WiFi.localIP());
     Serial.printf("RSSI: %ld dBm\n", (long)WiFi.RSSI());
+    if (MDNS.begin(host.c_str())) {                 // -> http://<host>.local/
+      MDNS.addService("http", "tcp", 80);
+      Serial.printf("mDNS: http://%s.local/\n", host.c_str());
+    }
   } else {
     Serial.println("\nWiFi connection timed out; starting setup AP.");
     startSetupAP();

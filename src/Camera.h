@@ -44,6 +44,12 @@ public:
     bool setXclkFreq(uint32_t hz);
     uint32_t getXclkFreq() const { return mXclkFreq; }
 
+    // Stop/start the camera. Stopping deinits it, which halts the XCLK clock and
+    // so clears its 2.4 GHz radiation -- the recovery path when a chosen XCLK is
+    // disturbing WiFi: stop the camera, regain solid control, pick 8 MHz, start.
+    void setCameraEnabled(bool on);
+    bool isCameraStopped() const { return mCameraStopped; }
+
     // When disabled, the resolution is locked: auto-adapt no longer steps it
     // up or down (manual setResolution still works).
     void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }
@@ -133,6 +139,9 @@ private:
 
     // Set while an HTTP-MJPEG client is streaming (see setHttpStreaming).
     volatile bool mHttpStreaming;
+
+    // True while the camera is stopped (deinited, XCLK off) -- see setCameraEnabled.
+    bool mCameraStopped;
 
     // Frame fan-out (MJPEG producer -> WS consumer). Double-buffered so the
     // async-task writer and the loop() reader can run on different cores: the
