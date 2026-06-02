@@ -35,13 +35,16 @@
 #define RIGHT_MOTOR_IN2  15
 #define LEFT_MOTOR_IN1   14
 #define LEFT_MOTOR_IN2    2
-// Servos. PAN=12 is a strapping pin (MTDI, must be low at boot for 3.3V flash);
-// a servo is a high-Z load so the chip's internal pulldown keeps boot safe --
-// but if the board won't boot, add an external pulldown or move this signal.
-// TILT=4 is also the onboard flash LED, so it will flicker while tilting.
+// PAN=12 is a strapping pin (MTDI, must be low at boot for 3.3V flash); a servo
+// is a high-Z load so the chip's internal pulldown keeps boot safe -- but if the
+// board won't boot, add an external pulldown or move this signal.
 #define PAN_PIN          12
-#define TILT_PIN          4
-#define LIGHT_PIN        -1   // no separate headlight (out of pins); disabled
+// TILT=3 is UART0 RX. Sacrificing serial *input* frees the flash LED (GPIO 4)
+// for the headlight. Flashing still works (the servo just twitches on the line
+// during upload -- unplug its signal if it bothers you); TX/GPIO1 stays free
+// for serial debug output.
+#define TILT_PIN          3
+#define LIGHT_PIN         4   // bright onboard flash LED, used as a PWM-less headlight
 #define STATUS_LED       33   // onboard red LED (active LOW)
 
 #endif // BOARD_CONFIG_ESP32CAM_H
