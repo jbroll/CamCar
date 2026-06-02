@@ -376,10 +376,14 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
                   fps, framesizeName(mFrameSize), mJpegQuality, mTargetFPS,
                   dropped, client->queueLen(), (long)WiFi.RSSI());
 
-    // Push device uptime (seconds since boot) to the page as a text frame.
-    // The browser distinguishes these from binary JPEG frames by type.
+    // Push device uptime + current XCLK to the page as text frames (the browser
+    // tells these from binary JPEG frames by type). The XCLK frame keeps the UI
+    // dropdown in sync with the persisted/applied value after a reboot.
     char status[24];
     snprintf(status, sizeof(status), "up %lu", (unsigned long)(now / 1000000));
+    client->text(status);
+    snprintf(status, sizeof(status), "xclk %lu",
+             (unsigned long)((mXclkFreq + 500000) / 1000000));   // rounded MHz
     client->text(status);
 }
 

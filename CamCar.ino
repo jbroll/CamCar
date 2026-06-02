@@ -117,11 +117,16 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
           } else if (key == "Quality") {
             camera.setQuality((uint8_t)valueInt);      // esp_camera q (4..63)
           } else if (key == "Xclk") {
-            // Xclk,<MHz> -- runtime XCLK sweep, fractional OK (2..20). See XCLK lesson.
+            // Xclk,<MHz> -- runtime XCLK, fractional OK (2..20). See XCLK lesson.
+            // Persisted to NVS so it survives reboot (applied after WiFi joins).
             float mhz = atof(value.c_str());
             if (mhz < 2.0f)  mhz = 2.0f;
             if (mhz > 20.0f) mhz = 20.0f;
             camera.setXclkFreq((uint32_t)(mhz * 1000000.0f));
+            char xbuf[8];
+            if (mhz == (int)mhz) snprintf(xbuf, sizeof(xbuf), "%d", (int)mhz);
+            else                 snprintf(xbuf, sizeof(xbuf), "%.1f", mhz);
+            PrefEdit::set("xclk", xbuf);
           } else if (key == "Camera") {
             // Camera,0 -> stop (deinit, XCLK off, clears WiFi); Camera,1 -> start
             camera.setCameraEnabled(valueInt != 0);
@@ -372,6 +377,18 @@ void setup(void) {
   if (!camera.begin()) {
     Serial.println("Camera initialization failed!");
     return;
+  }
+
+  // Apply a persisted XCLK (set via the UI menu). Done here -- after WiFi has
+  // associated and the camera is up -- so a bad saved value can't harm the join;
+  // the camera-stop button is the recovery if it disturbs streaming.
+  String savedXclk = PrefEdit::get("xclk");
+  if (savedXclk.length() > 0) {
+    float mhz = atof(savedXclk.c_str());
+    if (mhz >= 2.0f && mhz <= 20.0f) {
+      camera.setXclkFreq((uint32_t)(mhz * 1000000.0f));
+      Serial.printf("Applied saved XCLK: %s MHz\n", savedXclk.c_str());
+    }
   }
 }
 

@@ -6,6 +6,7 @@ const char* configParams[] = {
     "resolution",
     "framesize",
     "quality",
+    "xclk",
     nullptr  // terminator
 };
 

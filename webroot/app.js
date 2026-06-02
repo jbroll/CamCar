@@ -41,6 +41,16 @@ function handleStatus(msg) {
         var p = msg.slice(4).split(" ");   // "<volts> <percent>"
         var el = document.getElementById("battery");
         if (el) el.textContent = "bat " + p[0] + "V" + (p[1] !== undefined ? " (" + p[1] + "%)" : "");
+    } else if (msg.indexOf("xclk ") === 0) {
+        // Keep the menu showing the device's actual XCLK (e.g. a persisted value
+        // after reboot). Only adopt it if a matching option exists.
+        var v = msg.slice(5).trim();
+        var sel = document.getElementById("xclkSelect");
+        if (sel && sel.value !== v) {
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === v) { sel.value = v; break; }
+            }
+        }
     }
 }
 
