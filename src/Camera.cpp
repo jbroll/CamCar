@@ -85,7 +85,10 @@ bool CameraHandler::begin() {
     config.pin_reset = RESET_GPIO_NUM;
     config.xclk_freq_hz = XCLK_FREQ_HZ;
     config.pixel_format = PIXFORMAT_JPEG;
-    config.frame_size = mFrameSize;
+    // Size the framebuffer for the largest ladder entry so switching *up* to a
+    // bigger resolution on the fly always fits; the sensor is set to the
+    // current (smaller) size right after init.
+    config.frame_size = RES_LADDER[RES_LADDER_COUNT - 1];
     config.jpeg_quality = mJpegQuality;
 
     // Frame buffer in PSRAM (needed for larger JPEGs). Double-buffer so the
@@ -134,15 +137,15 @@ bool CameraHandler::applyLevel() {
     return true;
 }
 
-// Manual selection: set the ceiling (max resolution) and jump to it.
-bool CameraHandler::setResolution(framesize_t frameSize) {
-    int idx = ladderIndex(frameSize);
-    if (idx < 0) {
-        Serial.printf("setResolution: framesize %d not on the ladder\n", (int)frameSize);
+// Manual selection: set the ceiling (max resolution) by ladder index, jump to it.
+bool CameraHandler::setResolution(uint8_t ladderIndex) {
+    if (ladderIndex >= RES_LADDER_COUNT) {
+        Serial.printf("setResolution: index %u out of range (max %u)\n",
+                      ladderIndex, RES_LADDER_COUNT - 1);
         return false;
     }
-    mCeilingIdx = (uint8_t)idx;
-    mLevelIdx = (uint8_t)idx;
+    mCeilingIdx = ladderIndex;
+    mLevelIdx = ladderIndex;
     mClearWindows = 0;
     if (!applyLevel()) return false;
     Serial.printf("Resolution ceiling -> %s\n", framesizeName(mFrameSize));

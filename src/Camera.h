@@ -29,8 +29,10 @@ public:
     void setFPS(uint8_t fps);
     uint8_t getFPS() const;
 
-    // Change capture resolution on the fly (no camera re-init, no glitch).
-    bool setResolution(framesize_t frameSize);
+    // Set the resolution ceiling by ladder index (0..count-1) and jump to it.
+    // Index-based so the UI is immune to framesize_t enum value shifts between
+    // esp_camera versions. No camera re-init / no glitch.
+    bool setResolution(uint8_t ladderIndex);
     framesize_t getResolution() const;
 
     bool sendFrame();

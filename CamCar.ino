@@ -144,7 +144,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
         } else if (key == "Tilt") {
           tiltServo.write(valueInt);
         } else if (key == "Resolution") {
-          camera.setResolution((framesize_t)valueInt);
+          camera.setResolution((uint8_t)valueInt);  // value is a ladder index (0..N-1)
         }
       }
       break;
