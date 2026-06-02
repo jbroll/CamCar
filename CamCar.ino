@@ -128,6 +128,13 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
             PrefEdit::set("xclk", xbuf);
           } else if (key == "XclkScan") {
             camera.startScan();   // auto-tune; winner persisted in loop()
+          } else if (key == "Fps") {
+            // Max-fps cap. Pace the grab to a link-sustainable rate -> smooth
+            // delivery instead of race/stall on a marginal link. Persisted.
+            camera.setFPS((uint8_t)atoi(value.c_str()));
+            char fbuf[8];
+            snprintf(fbuf, sizeof(fbuf), "%u", camera.getFPS());
+            PrefEdit::set("fps", fbuf);
           } else if (key == "Camera") {
             // Camera,0 -> stop (deinit, XCLK off, clears WiFi); Camera,1 -> start
             camera.setCameraEnabled(valueInt != 0);
@@ -390,6 +397,11 @@ void setup(void) {
       camera.setXclkFreq((uint32_t)(mhz * 1000000.0f));
       Serial.printf("Applied saved XCLK: %s MHz\n", savedXclk.c_str());
     }
+  }
+  String savedFps = PrefEdit::get("fps");   // persisted max-fps cap
+  if (savedFps.length() > 0) {
+    int n = atoi(savedFps.c_str());
+    if (n >= 1 && n <= 30) camera.setFPS((uint8_t)n);
   }
 }
 

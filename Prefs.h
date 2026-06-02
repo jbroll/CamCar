@@ -7,6 +7,7 @@ const char* configParams[] = {
     "framesize",
     "quality",
     "xclk",
+    "fps",
     nullptr  // terminator
 };
 

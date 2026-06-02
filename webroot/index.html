@@ -32,6 +32,15 @@
                 <option value="18">Q: Medium</option>
                 <option value="26">Q: Low</option>
             </select>
+            <select id="fpsSelect" title="Max frame rate. Lower it on a marginal link for smooth video (stops the race/stall); raise it on a strong link. Persisted.">
+                <option value="5">FPS 5</option>
+                <option value="8">FPS 8</option>
+                <option value="10">FPS 10</option>
+                <option value="12">FPS 12</option>
+                <option value="15">FPS 15</option>
+                <option value="20">FPS 20</option>
+                <option value="30" selected>FPS 30</option>
+            </select>
             <select id="xclkSelect" title="Camera clock (XCLK MHz). Higher = more fps but can disturb 2.4GHz WiFi; clean values are per-board (use Auto-tune, or watch the fps). 8 is always safe. Persisted; boots safe at 8 if unset."></select>
             <button id="tuneBtn" type="button" title="Auto-tune XCLK: scans frequencies and picks the fastest clean one for your WiFi (~40s)">&#128269;</button>
         </div>

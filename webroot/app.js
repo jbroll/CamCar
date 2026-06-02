@@ -51,6 +51,14 @@ function handleStatus(msg) {
                 if (sel.options[i].value === v) { sel.value = v; break; }
             }
         }
+    } else if (msg.indexOf("fps ") === 0) {
+        var fv = msg.slice(4).trim();
+        var fsel = document.getElementById("fpsSelect");
+        if (fsel && fsel.value !== fv) {
+            for (var fi = 0; fi < fsel.options.length; fi++) {
+                if (fsel.options[fi].value === fv) { fsel.value = fv; break; }
+            }
+        }
     } else if (msg.indexOf("scanstart") === 0) {
         var s0 = document.getElementById("scan"); if (s0) s0.textContent = "tuning XCLK…";
     } else if (msg.indexOf("scanbest ") === 0) {
@@ -147,6 +155,10 @@ window.onload = function () {
 
     document.getElementById("qualitySelect").addEventListener("change", function () {
         if (websocketCarInput) websocketCarInput.send("Quality," + this.value);
+    });
+
+    document.getElementById("fpsSelect").addEventListener("change", function () {
+        if (websocketCarInput) websocketCarInput.send("Fps," + this.value);
     });
 
     // Populate the XCLK menu at 0.5 MHz steps (8.0 .. 20.0); the device's

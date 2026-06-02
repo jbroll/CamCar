@@ -475,6 +475,8 @@ void CameraHandler::adaptAndReport(int64_t now, AsyncWebSocketClient* client) {
     client->text(status);
     snprintf(status, sizeof(status), "xclk %.1f", mXclkFreq / 1000000.0f);
     client->text(status);
+    snprintf(status, sizeof(status), "fps %u", mTargetFPS);
+    client->text(status);
 }
 
 bool CameraHandler::sendFrame() {
