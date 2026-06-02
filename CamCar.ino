@@ -104,6 +104,8 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
           int valueInt = atoi(value.c_str());
           if (key == "Resolution") {
             camera.setResolution((uint8_t)valueInt);  // ladder index (0..N-1)
+          } else if (key == "Quality") {
+            camera.setQuality((uint8_t)valueInt);      // esp_camera q (4..63)
           } else if (key == "Lock") {
             // Lock,1 -> freeze resolution (disable auto-adapt); Lock,0 -> resume
             camera.setAdaptEnabled(valueInt == 0);

@@ -118,6 +118,10 @@ window.onload = function () {
         if (websocketCarInput) websocketCarInput.send("Resolution," + this.value);
     });
 
+    document.getElementById("qualitySelect").addEventListener("change", function () {
+        if (websocketCarInput) websocketCarInput.send("Quality," + this.value);
+    });
+
     // Lock toggle: freeze the current resolution (disable auto-adapt). Manual
     // resolution changes still work while locked.
     var locked = false;

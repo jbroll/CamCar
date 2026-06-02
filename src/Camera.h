@@ -35,6 +35,9 @@ public:
     bool setResolution(uint8_t ladderIndex);
     framesize_t getResolution() const;
 
+    // Set JPEG quality (esp_camera scale: 4..63, LOWER = sharper/bigger frame).
+    bool setQuality(uint8_t q);
+
     // When disabled, the resolution is locked: auto-adapt no longer steps it
     // up or down (manual setResolution still works).
     void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }

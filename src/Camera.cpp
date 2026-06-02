@@ -171,6 +171,19 @@ bool CameraHandler::setResolution(uint8_t ladderIndex) {
     return true;
 }
 
+// Manual JPEG quality. esp_camera scale is 4..63 where LOWER is sharper (and
+// uses more bandwidth). Applied live; auto-adapt never touches quality.
+bool CameraHandler::setQuality(uint8_t q) {
+    if (q < 4)  q = 4;
+    if (q > 63) q = 63;
+    sensor_t* s = esp_camera_sensor_get();
+    if (!s) return false;
+    if (s->set_quality(s, q) != 0) return false;
+    mJpegQuality = q;
+    Serial.printf("JPEG quality -> q%u\n", q);
+    return true;
+}
+
 camera_fb_t* CameraHandler::captureSnapshot(uint8_t snapIndex) {
     if (snapIndex >= SNAP_LADDER_COUNT) snapIndex = SNAP_LADDER_COUNT - 1;
     framesize_t res = SNAP_LADDER[snapIndex];
