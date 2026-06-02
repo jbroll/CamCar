@@ -51,6 +51,19 @@ function handleStatus(msg) {
                 if (sel.options[i].value === v) { sel.value = v; break; }
             }
         }
+    } else if (msg.indexOf("scanstart") === 0) {
+        var s0 = document.getElementById("scan"); if (s0) s0.textContent = "tuning XCLK…";
+    } else if (msg.indexOf("scanbest ") === 0) {
+        var best = msg.slice(9).trim();
+        var sb = document.getElementById("xclkSelect");
+        if (sb) for (var j = 0; j < sb.options.length; j++) {
+            if (sb.options[j].value === best) { sb.value = best; break; }
+        }
+        var s1 = document.getElementById("scan"); if (s1) s1.textContent = "tuned → XCLK " + best + " MHz";
+    } else if (msg.indexOf("scan ") === 0) {
+        var p2 = msg.slice(5).split(" ");   // "<mhz> <fps>"
+        var s2 = document.getElementById("scan");
+        if (s2) s2.textContent = "tuning " + p2[0] + " MHz: " + p2[1] + " fps";
     }
 }
 
@@ -138,6 +151,13 @@ window.onload = function () {
 
     document.getElementById("xclkSelect").addEventListener("change", function () {
         if (websocketCarInput) websocketCarInput.send("Xclk," + this.value);
+    });
+
+    // Auto-tune: ask the firmware to scan XCLKs and adopt the fastest clean one.
+    document.getElementById("tuneBtn").addEventListener("click", function () {
+        if (websocketCarInput) websocketCarInput.send("XclkScan");
+        var s = document.getElementById("scan");
+        if (s) s.textContent = "tuning XCLK… (~40s)";
     });
 
     // Camera stop/start: stopping deinits the camera (XCLK off) so its 2.4GHz

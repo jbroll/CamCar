@@ -127,6 +127,8 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
             if (mhz == (int)mhz) snprintf(xbuf, sizeof(xbuf), "%d", (int)mhz);
             else                 snprintf(xbuf, sizeof(xbuf), "%.1f", mhz);
             PrefEdit::set("xclk", xbuf);
+          } else if (key == "XclkScan") {
+            camera.startScan();   // auto-tune; winner persisted in loop()
           } else if (key == "Camera") {
             // Camera,0 -> stop (deinit, XCLK off, clears WiFi); Camera,1 -> start
             camera.setCameraEnabled(valueInt != 0);
@@ -405,6 +407,14 @@ void loop() {
 
   wsCamera.cleanupClients();
   wsCarInput.cleanupClients();
+
+  camera.scanTick();                       // advance an auto-tune scan, if running
+  if (camera.consumeScanDone()) {          // persist the scan's winner
+    char xbuf[8];
+    snprintf(xbuf, sizeof(xbuf), "%lu", (unsigned long)((camera.getXclkFreq() + 500000) / 1000000));
+    PrefEdit::set("xclk", xbuf);
+    Serial.printf("[scan] persisted XCLK %s MHz\n", xbuf);
+  }
 
 #if BATTERY_PIN >= 0
   // Push battery voltage/percent to the page every 2s (text frame "bat <V> <%>",

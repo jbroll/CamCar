@@ -1,6 +1,13 @@
 #include "Camera.h"
 #include <WiFi.h>
 
+// Auto-tune candidate XCLKs (MHz). Integer steps: the clean bands are ~1 MHz
+// wide so an integer always lands inside (see the XCLK lesson).
+static const uint8_t SCAN_FREQS[] = {8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+static constexpr uint8_t SCAN_COUNT = sizeof(SCAN_FREQS) / sizeof(SCAN_FREQS[0]);
+static constexpr int64_t SCAN_SETTLE_US = 1000000;  // 1.0s settle after each XCLK change
+static constexpr int64_t SCAN_WINDOW_US = 2000000;  // 2.0s measurement window
+
 // Resolution ladder (ascending). Auto-adapt moves within [0, ceiling]; the
 // manual "Resolution" command sets the ceiling and jumps to it.
 static const framesize_t RES_LADDER[] = {
@@ -68,6 +75,17 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mSharedIdx(0)
     , mSharedSeq(0)
     , mWsSentSeq(0)
+    , mDeliveredFrames(0)
+    , mScanning(false)
+    , mScanDone(false)
+    , mScanMeasuring(false)
+    , mScanSavedAdapt(true)
+    , mScanIdx(0)
+    , mScanPhaseStart(0)
+    , mScanMeasureStart(0)
+    , mScanFrameMark(0)
+    , mScanBestFps(0)
+    , mScanBestMhz(8)
 {
     mShared[0] = nullptr; mShared[1] = nullptr;
     mSharedLen[0] = 0;    mSharedLen[1] = 0;
@@ -218,6 +236,78 @@ void CameraHandler::setCameraEnabled(bool on) {
     mCameraStopped = true;
     mPauseRequested = false;
     Serial.println("[cam] stopped (XCLK off, RF cleared)");
+}
+
+// ---- Auto-tune scan (driven by scanTick() from loop(), so XCLK changes are
+// sequential with sendFrame -- no pause handshake needed; we deinit/init directly). ----
+
+void CameraHandler::startScan() {
+    if (mScanning) return;
+    if (mClientId == 0 || mHttpStreaming || mCameraStopped) {
+        Serial.println("[scan] need a connected viewer, camera running, no /stream");
+        return;
+    }
+    mScanSavedAdapt = mAutoAdapt;
+    mAutoAdapt = false;             // hold resolution fixed across the sweep
+    mScanning = true;
+    mScanDone = false;
+    mScanIdx = 0;
+    mScanBestFps = -1.0f;
+    mScanBestMhz = SCAN_FREQS[0];
+    mScanMeasuring = false;
+    mScanPhaseStart = 0;            // 0 => apply SCAN_FREQS[mScanIdx] on next tick
+    AsyncWebSocketClient* c = mWsCamera.client(mClientId);
+    if (c) c->text("scanstart");
+    Serial.println("[scan] started");
+}
+
+void CameraHandler::scanTick() {
+    if (!mScanning) return;
+    int64_t now = esp_timer_get_time();
+
+    if (mScanPhaseStart == 0) {     // apply the current candidate (loop context)
+        mXclkFreq = (uint32_t)SCAN_FREQS[mScanIdx] * 1000000UL;
+        initSensor();
+        mScanPhaseStart = esp_timer_get_time();
+        mScanMeasuring = false;
+        return;
+    }
+    if (!mScanMeasuring) {          // settling: don't count yet
+        if (now - mScanPhaseStart >= SCAN_SETTLE_US) {
+            mScanFrameMark = mDeliveredFrames;
+            mScanMeasureStart = now;
+            mScanMeasuring = true;
+        }
+        return;
+    }
+    if (now - mScanMeasureStart < SCAN_WINDOW_US) return;   // still measuring
+
+    float fps = (mDeliveredFrames - mScanFrameMark) * 1000000.0f / (now - mScanMeasureStart);
+    uint8_t mhz = SCAN_FREQS[mScanIdx];
+    AsyncWebSocketClient* c = mWsCamera.client(mClientId);
+    if (c) { char b[32]; snprintf(b, sizeof(b), "scan %u %.1f", mhz, fps); c->text(b); }
+    Serial.printf("[scan] %u MHz -> %.1f fps\n", mhz, fps);
+    if (fps > mScanBestFps) { mScanBestFps = fps; mScanBestMhz = mhz; }
+
+    if (++mScanIdx >= SCAN_COUNT) { finishScan(); return; }
+    mScanPhaseStart = 0;            // trigger apply of the next candidate
+}
+
+void CameraHandler::finishScan() {
+    mXclkFreq = (uint32_t)mScanBestMhz * 1000000UL;
+    initSensor();
+    mAutoAdapt = mScanSavedAdapt;
+    mScanning = false;
+    mScanDone = true;               // loop() persists the winner to NVS
+    AsyncWebSocketClient* c = mWsCamera.client(mClientId);
+    if (c) { char b[32]; snprintf(b, sizeof(b), "scanbest %u", mScanBestMhz); c->text(b); }
+    Serial.printf("[scan] best: %u MHz @ %.1f fps\n", mScanBestMhz, mScanBestFps);
+}
+
+bool CameraHandler::consumeScanDone() {
+    if (!mScanDone) return false;
+    mScanDone = false;
+    return true;
 }
 
 // Called from the MJPEG producer (async task). Copies the frame into the
@@ -449,6 +539,7 @@ bool CameraHandler::sendFrame() {
     }
 
     mSentSlots++;
+    mDeliveredFrames++;          // free-running; the auto-tune scan metric
     adaptAndReport(now, client);
     return true;
 }

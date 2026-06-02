@@ -50,6 +50,15 @@ public:
     void setCameraEnabled(bool on);
     bool isCameraStopped() const { return mCameraStopped; }
 
+    // Auto-tune: sweep candidate XCLKs, score each by delivered fps to the WS
+    // client, adopt the best. Driven by scanTick() from loop(); reports progress
+    // via "scan <MHz> <fps>" and "scanbest <MHz>" text frames. Needs a connected
+    // WS client (the page) to measure delivery.
+    void startScan();
+    void scanTick();
+    bool consumeScanDone();    // true once after a scan completes (caller persists)
+    bool isScanning() const { return mScanning; }
+
     // When disabled, the resolution is locked: auto-adapt no longer steps it
     // up or down (manual setResolution still works).
     void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }
@@ -156,6 +165,21 @@ private:
     uint32_t mWsSentSeq;            // last seq forwarded to the WS client
     portMUX_TYPE mSharedMux;
     bool forwardSharedToWs();       // push the latest shared frame to the WS client
+
+    // Auto-tune scan: free-running counter of successful WS sends (the scan
+    // metric -- a dirty XCLK collapses delivered throughput) + the state machine.
+    uint32_t mDeliveredFrames;
+    bool mScanning;
+    bool mScanDone;            // set once when a scan finishes (consumeScanDone)
+    bool mScanMeasuring;       // false = settling after an XCLK change, true = counting
+    bool mScanSavedAdapt;      // mAutoAdapt to restore after the scan
+    uint8_t mScanIdx;          // index into SCAN_FREQS
+    int64_t mScanPhaseStart;   // when the current frequency's settle began
+    int64_t mScanMeasureStart;
+    uint32_t mScanFrameMark;   // mDeliveredFrames at measurement start
+    float mScanBestFps;
+    uint8_t mScanBestMhz;
+    void finishScan();
 };
 
 #endif // CAMERA_HANDLER_H
