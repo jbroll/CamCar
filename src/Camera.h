@@ -38,6 +38,12 @@ public:
     // Set JPEG quality (esp_camera scale: 4..63, LOWER = sharper/bigger frame).
     bool setQuality(uint8_t q);
 
+    // Change the camera XCLK at runtime (re-inits the sensor; WiFi untouched).
+    // Used to sweep for the highest RF-clean frequency without reflashing.
+    // WARNING: a too-high XCLK can swamp 2.4 GHz WiFi (see the XCLK lesson).
+    bool setXclkFreq(uint32_t hz);
+    uint32_t getXclkFreq() const { return mXclkFreq; }
+
     // When disabled, the resolution is locked: auto-adapt no longer steps it
     // up or down (manual setResolution still works).
     void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }
@@ -92,6 +98,8 @@ private:
     static constexpr uint8_t UPSHIFT_WINDOWS = 2;          // clean windows before an upshift
     static constexpr int64_t UPSHIFT_INHIBIT_US = 30000000; // no upshift for 30s after a downshift
 
+    // (Re-)initialise the camera at mXclkFreq and re-apply sensor settings.
+    bool initSensor();
     // Apply the current resolution-ladder level to the sensor (no re-init).
     bool applyLevel();
     // Periodic: auto-adjust resolution to the link, then emit the stream report.
@@ -102,6 +110,7 @@ private:
     uint8_t mTargetFPS;
     framesize_t mFrameSize;
     uint8_t mJpegQuality;
+    uint32_t mXclkFreq;          // current camera XCLK in Hz (default XCLK_FREQ_HZ)
     int64_t mLastFrameTime;
 
     // Auto-adapt state. Resolution moves on a ladder between 0 and the

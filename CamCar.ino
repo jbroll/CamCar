@@ -115,6 +115,12 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
             camera.setResolution((uint8_t)valueInt);  // ladder index (0..N-1)
           } else if (key == "Quality") {
             camera.setQuality((uint8_t)valueInt);      // esp_camera q (4..63)
+          } else if (key == "Xclk") {
+            // Xclk,<MHz> -- runtime XCLK sweep, fractional OK (2..20). See XCLK lesson.
+            float mhz = atof(value.c_str());
+            if (mhz < 2.0f)  mhz = 2.0f;
+            if (mhz > 20.0f) mhz = 20.0f;
+            camera.setXclkFreq((uint32_t)(mhz * 1000000.0f));
           } else if (key == "Lock") {
             // Lock,1 -> freeze resolution (disable auto-adapt); Lock,0 -> resume
             camera.setAdaptEnabled(valueInt == 0);

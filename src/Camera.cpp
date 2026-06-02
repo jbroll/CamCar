@@ -50,6 +50,7 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mTargetFPS(DEFAULT_FPS)
     , mFrameSize(DEFAULT_FRAMESIZE)
     , mJpegQuality(DEFAULT_JPEG_QUALITY)
+    , mXclkFreq(XCLK_FREQ_HZ)
     , mLastFrameTime(0)
     , mCeilingIdx(0)
     , mLevelIdx(0)
@@ -86,7 +87,10 @@ CameraHandler::~CameraHandler() {
     esp_camera_deinit();
 }
 
-bool CameraHandler::begin() {
+// (Re-)initialise the camera at mXclkFreq and re-apply all sensor settings.
+// Safe to call repeatedly (deinits first) -- used by both begin() and the
+// runtime XCLK change.
+bool CameraHandler::initSensor() {
     esp_camera_deinit();
     vTaskDelay(pdMS_TO_TICKS(100));
 
@@ -109,7 +113,7 @@ bool CameraHandler::begin() {
     config.pin_sscb_scl = SIOC_GPIO_NUM;
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
-    config.xclk_freq_hz = XCLK_FREQ_HZ;
+    config.xclk_freq_hz = mXclkFreq;
     config.pixel_format = PIXFORMAT_JPEG;
     // Size the framebuffer for the largest size we ever use (UXGA snapshots),
     // so switching *up* on the fly always fits; the sensor is set to the
@@ -148,18 +152,43 @@ bool CameraHandler::begin() {
         s->set_gainceiling(s, (gainceiling_t)4);
     }
 
-    // Double buffer for fanning MJPEG frames out to a concurrent WS viewer.
-    // PSRAM; non-fatal if it fails (the fan-out just stays disabled).
+    mLastAdaptTime = esp_timer_get_time();
+    Serial.printf("Camera ready: %s q%u  XCLK %lu Hz  Free PSRAM: %u bytes\n",
+                  framesizeName(mFrameSize), mJpegQuality,
+                  (unsigned long)mXclkFreq, ESP.getFreePsram());
+    return true;
+}
+
+bool CameraHandler::begin() {
+    if (!initSensor()) return false;
+
+    // Double buffer for fanning MJPEG frames out to a concurrent WS viewer
+    // (one-time PSRAM alloc; non-fatal if it fails -> fan-out stays disabled).
     mShared[0] = (uint8_t*)ps_malloc(SHARED_FRAME_CAP);
     mShared[1] = (uint8_t*)ps_malloc(SHARED_FRAME_CAP);
     if (!mShared[0] || !mShared[1]) {
         Serial.println("[stream] shared-frame alloc failed; WS+MJPEG fan-out disabled");
     }
-
-    mLastAdaptTime = esp_timer_get_time();
-    Serial.printf("Camera ready: %s q%u  Free PSRAM: %u bytes\n",
-                  framesizeName(mFrameSize), mJpegQuality, ESP.getFreePsram());
     return true;
+}
+
+// Runtime XCLK change: re-init the sensor at the new frequency. WiFi is not
+// touched, so the board stays reachable -- unless the new XCLK itself swamps
+// 2.4 GHz WiFi, in which case recover by reflashing.
+bool CameraHandler::setXclkFreq(uint32_t hz) {
+    // Pause the loop's grab (snapshot handshake) so we don't deinit mid-capture.
+    mPauseRequested = true;
+    int64_t deadline = esp_timer_get_time() + 300000;  // 300ms safety net
+    while (!mPaused && esp_timer_get_time() < deadline) {
+        delay(1);
+    }
+
+    mXclkFreq = hz;
+    bool ok = initSensor();
+
+    mPauseRequested = false;
+    Serial.printf("[xclk] -> %lu Hz (%s)\n", (unsigned long)hz, ok ? "ok" : "FAILED");
+    return ok;
 }
 
 // Called from the MJPEG producer (async task). Copies the frame into the
