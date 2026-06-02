@@ -326,7 +326,16 @@ void setup(void) {
 
   // Live MJPEG for VLC/ffmpeg/NVRs: GET /stream (multipart/x-mixed-replace).
   // Owns the camera for the connection's lifetime; the WS live view yields.
-  server.on("/stream", HTTP_GET, [](AsyncWebServerRequest* request) {
+  // Also answer HEAD (many MJPEG/ONVIF clients probe with HEAD first) with the
+  // same headers and no body -- otherwise they get a 404 and give up.
+  server.on("/stream", HTTP_GET | HTTP_HEAD, [](AsyncWebServerRequest* request) {
+    if (request->method() == HTTP_HEAD) {
+      AsyncWebServerResponse* head =
+        request->beginResponse(200, "multipart/x-mixed-replace; boundary=frame", "");
+      head->addHeader("Cache-Control", "no-store");
+      request->send(head);
+      return;
+    }
     MjpegState* st = new MjpegState();   // value-init zeroes all members
     st->cam = &camera;                   // enables WS fan-out of these frames
     camera.setHttpStreaming(true);
