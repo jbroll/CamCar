@@ -321,43 +321,57 @@
         // WebSocket initialization
         var webSocketCameraUrl = "ws://" + window.location.hostname + "/Camera";
         var webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";
-        var websocketCamera;
-        var websocketCarInput;
-        var statFrames = 0, statBytes = 0;
+        var websocketCamera = null;
+        var websocketCarInput = null;
+        var statFrames = 0, statBytes = 0, lastFrameMs = 0;
+        var connState = { cam: false, ctl: false };
 
-        function initCameraWebSocket() {
-            websocketCamera = new WebSocket(webSocketCameraUrl);
-            websocketCamera.binaryType = 'blob';
-            websocketCamera.onopen = function(event) {
-                document.getElementById('connText').textContent = 'Camera Connected';
-            };
-            websocketCamera.onclose = function(event) {
-                document.getElementById('connText').textContent = 'Camera Disconnected - Retrying...';
-                setTimeout(initCameraWebSocket, 2000);
-            };
-            var cameraImage = document.getElementById("cameraImage");
-            var prevUrl = null;
-            websocketCamera.onmessage = function(event) {
-                statFrames++;
-                statBytes += event.data.size;
-                var url = URL.createObjectURL(event.data);
-                cameraImage.src = url;
-                // Revoke the previous frame's URL (already displayed) to avoid
-                // the unbounded blob leak the original inline handler had.
-                if (prevUrl) URL.revokeObjectURL(prevUrl);
-                prevUrl = url;
-            };
+        function renderConn() {
+            var el = document.getElementById('connText');
+            if (!el) return;
+            if (connState.cam && connState.ctl) { el.textContent = 'Connected'; return; }
+            var down = [];
+            if (!connState.cam) down.push('Camera');
+            if (!connState.ctl) down.push('Controls');
+            el.textContent = down.join(' & ') + ' reconnecting…';
         }
 
-        function initCarInputWebSocket() {
-            websocketCarInput = new WebSocket(webSocketCarInputUrl);
-            websocketCarInput.onopen = function(event) {
-                document.getElementById('connText').textContent = 'Controls Connected';
+        // A WebSocket that auto-reconnects: exponential backoff with jitter,
+        // clean teardown of the old socket, and backoff reset on a good open.
+        function ReconnectingSocket(url, handlers) {
+            var self = this;
+            var ws = null, backoff = 1000, maxBackoff = 15000, timer = null;
+            function cleanup() {
+                if (ws) {
+                    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+                    try { ws.close(); } catch (e) {}
+                    ws = null;
+                }
+            }
+            function schedule() {
+                if (timer) return;
+                var delay = Math.min(backoff, maxBackoff) * (0.7 + 0.6 * Math.random());
+                backoff = Math.min(backoff * 2, maxBackoff);
+                timer = setTimeout(function () { timer = null; self.connect(); }, delay);
+            }
+            self.connect = function () {
+                if (timer) { clearTimeout(timer); timer = null; }
+                cleanup();
+                ws = new WebSocket(url);
+                ws.binaryType = 'blob';
+                ws.onopen = function (e) { backoff = 1000; if (handlers.onopen) handlers.onopen(e); };
+                ws.onmessage = handlers.onmessage || null;
+                ws.onerror = function () { try { ws.close(); } catch (e) {} };  // -> onclose
+                ws.onclose = function (e) { if (handlers.onclose) handlers.onclose(e); schedule(); };
             };
-            websocketCarInput.onclose = function(event) {
-                document.getElementById('connText').textContent = 'Controls Disconnected - Retrying...';
-                setTimeout(initCarInputWebSocket, 2000);
+            self.send = function (d) {
+                if (ws && ws.readyState === WebSocket.OPEN) { ws.send(d); return true; }
+                return false;
             };
+            self.reconnectNow = function () { backoff = 1000; self.connect(); };
+            Object.defineProperty(self, 'readyState', {
+                get: function () { return ws ? ws.readyState : WebSocket.CLOSED; }
+            });
         }
 
         // Stream stats overlay (measured in-browser; no serial needed)
@@ -373,8 +387,50 @@
 
         // Initialize WebSocket connections
         window.onload = function() {
-            initCameraWebSocket();
-            initCarInputWebSocket();
+            var cameraImage = document.getElementById("cameraImage");
+            var prevUrl = null;
+            websocketCamera = new ReconnectingSocket(webSocketCameraUrl, {
+                onopen: function () { connState.cam = true; renderConn(); },
+                onclose: function () { connState.cam = false; renderConn(); },
+                onmessage: function (event) {
+                    lastFrameMs = Date.now();
+                    statFrames++;
+                    statBytes += event.data.size;
+                    var url = URL.createObjectURL(event.data);
+                    cameraImage.src = url;
+                    if (prevUrl) URL.revokeObjectURL(prevUrl);  // avoid blob leak
+                    prevUrl = url;
+                }
+            });
+            websocketCarInput = new ReconnectingSocket(webSocketCarInputUrl, {
+                onopen: function () { connState.ctl = true; renderConn(); },
+                onclose: function () { connState.ctl = false; renderConn(); }
+            });
+            websocketCamera.connect();
+            websocketCarInput.connect();
+
+            // Watchdog: a half-open socket may never fire onclose, so if the
+            // stream goes silent longer than a UXGA snapshot pause, force a
+            // reconnect.
+            setInterval(function () {
+                if (websocketCamera && websocketCamera.readyState === WebSocket.OPEN
+                    && lastFrameMs && (Date.now() - lastFrameMs) > 6000) {
+                    lastFrameMs = Date.now();
+                    websocketCamera.reconnectNow();
+                }
+            }, 2000);
+
+            // Reconnect promptly when the network returns or the app is resumed
+            // (mobile: backgrounding often kills the socket without an onclose).
+            function reconnectAll() {
+                if (websocketCamera) websocketCamera.reconnectNow();
+                if (websocketCarInput) websocketCarInput.reconnectNow();
+            }
+            window.addEventListener('online', reconnectAll);
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') reconnectAll();
+            });
+
             setInterval(updateStreamStats, 1000);
             document.getElementById("resolutionSelect").addEventListener("change", function() {
                 if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
