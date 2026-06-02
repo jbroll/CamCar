@@ -87,6 +87,7 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mScanFrameMark(0)
     , mScanBestFps(0)
     , mScanBestMhz(8)
+    , mScanSavedLevel(0)
 {
     mShared[0] = nullptr; mShared[1] = nullptr;
     mSharedLen[0] = 0;    mSharedLen[1] = 0;
@@ -250,6 +251,12 @@ void CameraHandler::startScan() {
     }
     mScanSavedAdapt = mAutoAdapt;
     mAutoAdapt = false;             // hold resolution fixed across the sweep
+    // Measure at the OPERATING resolution (the user-selected ceiling, the most
+    // demanding size streamed) so we never adopt a clock that's clean at low res
+    // but dirty under real load. Restored in finishScan().
+    mScanSavedLevel = mLevelIdx;
+    mLevelIdx = mCeilingIdx;
+    applyLevel();
     mScanning = true;
     mScanDone = false;
     mScanIdx = 0;
@@ -296,7 +303,9 @@ void CameraHandler::scanTick() {
 
 void CameraHandler::finishScan() {
     mXclkFreq = (uint32_t)(mScanBestMhz * 1000000.0f);
-    initSensor();
+    initSensor();                   // re-init at the winning XCLK
+    mLevelIdx = mScanSavedLevel;    // restore the streaming resolution
+    applyLevel();
     mAutoAdapt = mScanSavedAdapt;
     mScanning = false;
     mScanDone = true;               // loop() persists the winner to NVS

@@ -179,6 +179,7 @@ private:
     uint32_t mScanFrameMark;   // mDeliveredFrames at measurement start
     float mScanBestFps;
     float mScanBestMhz;
+    uint8_t mScanSavedLevel;   // resolution level to restore after the scan
     void finishScan();
 };
 
