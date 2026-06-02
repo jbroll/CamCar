@@ -42,6 +42,11 @@ public:
     // up or down (manual setResolution still works).
     void setAdaptEnabled(bool enabled) { mAutoAdapt = enabled; }
 
+    // HTTP-MJPEG (/stream) owns the camera while a client is connected; the WS
+    // sendFrame() path yields so the single framebuffer isn't double-grabbed.
+    void setHttpStreaming(bool on) { mHttpStreaming = on; }
+    bool isHttpStreaming() const { return mHttpStreaming; }
+
     bool sendFrame();
 
     // Capture one still at SNAP_LADDER[snapIndex] (up to UXGA). Briefly pauses
@@ -111,6 +116,9 @@ private:
     // a pause and waits for sendFrame() to acknowledge before capturing.
     volatile bool mPauseRequested;
     volatile bool mPaused;
+
+    // Set while an HTTP-MJPEG client is streaming (see setHttpStreaming).
+    volatile bool mHttpStreaming;
 };
 
 #endif // CAMERA_HANDLER_H

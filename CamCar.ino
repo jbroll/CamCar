@@ -12,6 +12,7 @@
 #include "src/board_config.h"
 
 #include "src/Camera.h"
+#include "src/MjpegStream.h"
 
 #include "src/PrefEdit.h"
 #include "src/WebHandler.h"
@@ -284,6 +285,25 @@ void setup(void) {
     if (download) {
       response->addHeader("Content-Disposition", "attachment; filename=snapshot.jpg");
     }
+    request->send(response);
+  });
+
+  // Live MJPEG for VLC/ffmpeg/NVRs: GET /stream (multipart/x-mixed-replace).
+  // Owns the camera for the connection's lifetime; the WS live view yields.
+  server.on("/stream", HTTP_GET, [](AsyncWebServerRequest* request) {
+    MjpegState* st = new MjpegState();   // value-init zeroes all members
+    camera.setHttpStreaming(true);
+    AsyncWebServerResponse* response = request->beginChunkedResponse(
+      "multipart/x-mixed-replace; boundary=frame",
+      [st](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+        return mjpegFill(st, buffer, maxLen);
+      });
+    response->addHeader("Cache-Control", "no-store");
+    request->onDisconnect([st]() {
+      if (st->fb) esp_camera_fb_return(st->fb);  // release a half-sent frame
+      delete st;
+      camera.setHttpStreaming(false);            // hand the camera back to WS
+    });
     request->send(response);
   });
 

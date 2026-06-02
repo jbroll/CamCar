@@ -65,8 +65,12 @@ The camera XCLK frequency is set to **8 MHz** in `Camera.cpp` (`XCLK_FREQ_HZ`). 
 
 **Control protocol** (`/CarInput` WebSocket text frames):
 - `tank <x> <y>` and `camr <x> <y>` — space-delimited, x/y in −100..100 (sent by the UI joysticks).
-- `Resolution,<index>` — comma-delimited (the dropdown).
+- Comma-delimited `key,value`: `Resolution,<index>` (ladder index), `Quality,<q>` (JPEG q 4–63, **lower = sharper/bigger**), `Lock,<0|1>` (1 = freeze resolution / disable auto-adapt), `Light,<0|1>` (headlight on `LIGHT_PIN`).
 - The parser reads the first whitespace token; if it's `tank`/`camr` it dispatches those, else it falls back to comma `key,value`. Disconnect → safe-stop + center servos.
+
+**Status frames (device → page):** every 2 s the camera socket also sends a text frame `up <seconds>` (device uptime); the page shows it and ticks locally between syncs. The browser tells text from binary JPEG frames by type.
+
+**HTTP-MJPEG (`GET /stream`):** a `multipart/x-mixed-replace; boundary=frame` chunked response (filler in `src/MjpegStream.h`) for VLC/ffmpeg/NVRs. The camera has one framebuffer, so while a `/stream` client is connected it **owns the camera** (`CameraHandler::setHttpStreaming`) and the WS `sendFrame()` path yields; `request->onDisconnect` hands it back. Single-viewer like the WS path — opening `/stream` freezes the WS live view until it disconnects. Still MJPEG (the OV2640/S3 have no H.264 encoder) and still ~10 fps at the 8 MHz XCLK.
 
 ## Embedded web-asset pipeline
 

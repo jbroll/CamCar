@@ -62,6 +62,7 @@ CameraHandler::CameraHandler(AsyncWebSocket& wsCamera)
     , mUpshiftInhibitUntil(0)
     , mPauseRequested(false)
     , mPaused(false)
+    , mHttpStreaming(false)
 {
     int idx = ladderIndex(DEFAULT_FRAMESIZE);
     mCeilingIdx = (idx >= 0) ? (uint8_t)idx : 0;
@@ -280,6 +281,11 @@ bool CameraHandler::sendFrame() {
         return false;
     }
     mPaused = false;
+
+    // HTTP-MJPEG (/stream) is grabbing frames itself; don't double-grab.
+    if (mHttpStreaming) {
+        return false;
+    }
 
     if (mClientId == 0) {
         return false;
