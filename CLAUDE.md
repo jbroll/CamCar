@@ -13,7 +13,7 @@ All workflow goes through the `Makefile`:
 - `make build` — regenerate embedded web assets, then `arduino-cli compile`
 - `make upload` — build + flash over `PORT` (`/dev/ttyACM0`)
 - `make monitor` — serial monitor at 115200 (**see the serial-resets-the-board gotcha below**)
-- `make install` — install esp32 core + libs (ESP32Servo, "Async TCP", "ESP Async WebServer")
+- `make install` — install esp32 core + libs (ESP32Servo, "Async TCP", "ESP Async WebServer"). Micro-RTSP is **vendored in-repo** (`libraries/Micro-RTSP`, passed via `--libraries`), so it needs no install.
 - `make tester` — Python FastAPI mock (`tester.py`) to exercise the UI without hardware
 
 **FQBN:** `esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app`
@@ -49,9 +49,10 @@ The camera XCLK **boots at 8 MHz** (`XCLK_FREQ_HZ` in `Camera.cpp`) — the alwa
 
 ## Camera streaming (`src/Camera.h` / `Camera.cpp`)
 
-`CameraHandler` owns capture + streaming. Init is at **UXGA** so the framebuffer fits any resolution; the sensor then runs at the streaming size. PSRAM framebuffer, `fb_count=2`, `GRAB_WHEN_EMPTY`.
+`CameraHandler` owns capture + streaming. Init is at **UXGA** so the framebuffer fits any resolution; the sensor then runs at the streaming size. PSRAM framebuffer, `fb_count=2`, `GRAB_LATEST` (freshest frame, lowest latency).
 
-- **`sendFrame()`** (called from `loop()`): paces to `mTargetFPS`, captures, sends the whole JPEG as one `wsCamera.binary()` message, then **returns the fb immediately** (binary() copies the data — do *not* hold the camera buffer; holding it serialized the pipeline and caused multi-second stalls). Under backpressure (`queueLen() > MAX_INFLIGHT_FRAMES`) it **drops** a frame to bound latency.
+- **`sendFrame()`** is the **single producer** (called from `loop()`): it is the *only* code that grabs the camera. One fps-cap pacing gate (`mTargetFPS`) — this is the single rate limit that bounds the link for **all** viewers. It captures, `publishSharedFrame()`s the JPEG into a cross-core double buffer (for the stream-server consumers), then sends to every WS `/Camera` client via `wsCamera.getClients()` + `binary(shared)` with per-client `queueLen() <= MAX_INFLIGHT_FRAMES` backpressure (one shared buffer → copied once for all), and **returns the fb immediately**. It only grabs when someone is watching: `wsCamera.count() > 0 || streamClients() > 0`.
+- **Consumers never grab.** The MJPEG/RTSP stream servers read the producer's frames via `CameraHandler::copyLatestFrame(dst, cap, &len, lastSeq)` (returns a new seq if a frame newer than `lastSeq` exists). `addStreamClient()`/`removeStreamClient()` keep the producer running while any stream client is connected even with no WS viewer. See **Streaming servers** below.
 - **Resolution control** is by **ladder index**, NOT raw `framesize_t` value (see enum gotcha). `RES_LADDER` = QVGA/CIF/VGA/SVGA/XGA; `setResolution(index)` sets the ceiling and jumps to it.
 - **Auto-adapt** (`adaptAndReport`, every 2 s): if >25 % of frame-slots were dropped, step the resolution **down** one rung; after 2 clean windows step **up** toward the user-selected ceiling. Reuses the frame-drop as the congestion signal; dormant on a clear link. Replaced an over-built 14-level quality controller that was removed.
 - **Stream report:** every 2 s `sendFrame` prints `[stream] <fps> | <mode> | dropped <n> | queue <n> | RSSI <dBm>` and `[adapt]` on each step.
@@ -72,7 +73,16 @@ The camera XCLK **boots at 8 MHz** (`XCLK_FREQ_HZ` in `Camera.cpp`) — the alwa
 
 **Status frames (device → page):** the camera socket also sends text frames the page distinguishes from binary JPEG by type: `up <seconds>` (device uptime, from `adaptAndReport`) and — where `BATTERY_PIN >= 0` (S3 GPIO 1 = ADC1_CH0, the old motor-EN spare; no free ADC1 pin on the ESP32-CAM) — `bat <volts> <percent>` every 2 s from `loop()`. Battery wiring is a resistor divider into `BATTERY_PIN`; `BATTERY_DIVIDER`/`BATTERY_VMIN`/`BATTERY_VMAX` in `CamCar.ino` calibrate it (defaults: 200k/100k divider, 2S LiPo 6.0–8.4 V). Read via `analogReadMilliVolts` (factory-calibrated), averaged over 8 samples.
 
-**HTTP-MJPEG (`GET /stream`):** a `multipart/x-mixed-replace; boundary=frame` chunked response (filler in `src/MjpegStream.h`) for VLC/ffmpeg/NVRs. The camera has one framebuffer, so while a `/stream` client is connected it becomes the sole **grabber** (`CameraHandler::setHttpStreaming`): the MJPEG filler grabs each frame and `publishSharedFrame()`s it into a cross-core double buffer; `sendFrame()` in `loop()` then **forwards** those same frames to the WS client instead of grabbing. So a WS viewer and a `/stream` viewer run **concurrently on the same frames** (verified: WS stays ~10 fps with MJPEG connected, identical frame sizes on both). The publish is skipped (no copy) when no WS client is connected. `request->onDisconnect` flips grabbing back to the WS path. Still MJPEG (the OV2640/S3 have no H.264 encoder) and ~10 fps at the 8 MHz XCLK. Note: the *grab* happens in the async task while MJPEG streams (blocks it up to ~one frame interval) — a deliberate trade for full MJPEG fps; the alternative (`RESPONSE_TRY_AGAIN`) would be poll-limited to ~2 fps.
+## Streaming servers (`src/StreamServer.h`, `MjpegStreamServer.h`, `RtspStreamServer.h`)
+
+The WS `/Camera` live view runs on **AsyncWebServer** (event loop on the `async_tcp` task). The byte-pump streams want to **block** (wait for the next paced frame, then blocking-write), which is forbidden on `async_tcp` — *all* AsyncTCP handlers/sockets share **one** global `async_tcp` task (verified in `AsyncTCP.cpp`: single `_async_service_task_handle`), so blocking any handler starves the WS control channel. So the streams live elsewhere.
+
+**`StreamServer`** (base) `extends WiFiServer`: own listening port + own **dedicated FreeRTOS task** running `run()`. On its own task blocking writes are fine — they park only that task, never `async_tcp` (control) or `loop()` (the producer). Subclasses implement `run()` and read frames via `copyLatestFrame()`; they never grab the camera. This is Espressif's CameraWebServer split (control on 80, stream on 81) and the esp32cam-rtsp `WiFiServer`-extends pattern, but keeping AsyncWebServer for UI/WS.
+
+- **`MjpegStreamServer`** — `http://<host>:81/stream`, `multipart/x-mixed-replace`, for VLC/ffmpeg/NVRs. A linear blocking pump: poll `copyLatestFrame()` for the next frame, write header + JPEG. One client at a time (a second waits in the listen backlog). Relay buffer in PSRAM.
+- **`RtspStreamServer`** — `rtsp://<host>:554/mjpeg/1`, RTP/JPEG (RFC 2435) via **vendored Micro-RTSP** (`libraries/Micro-RTSP`, a minimal `CStreamer`+`CRtspSession` subset). `SharedFrameStreamer` feeds `copyLatestFrame()` instead of grabbing; we patched `CStreamer::setDimensions()` so the RTP width/height tracks the runtime resolution (auto-adapt) per frame, and we own session lifetime (stock Micro-RTSP leaks closed sessions). Multiple concurrent sessions.
+
+All MJPEG (the OV2640 has no H.264 encoder). Verified on both boards: the **single producer** feeds WS + `:81` MJPEG + `:554` RTSP **concurrently** (S3 ~16/16/13 fps at 14 MHz XCLK), and `/CarInput` WS ping→pong RTT stays flat under stream load (median ~5 ms, unchanged) — proving the pumps never block `async_tcp`. (`make build` requires `--libraries libraries` for the vendored lib; the Makefile sets it.)
 
 ## Embedded web-asset pipeline
 

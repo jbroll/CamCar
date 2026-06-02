@@ -40,8 +40,12 @@ install:
 	$(ARDUINO_CLI) lib install "Async TCP"
 	$(ARDUINO_CLI) lib install "ESP Async WebServer"
 
+# Vendored, in-repo libraries not in the Arduino registry (e.g. Micro-RTSP,
+# patched for runtime resolution changes). Each subdir is a library.
+VENDOR_LIBS := libraries
+
 build: gen-sources
-	$(ARDUINO_CLI) compile --fqbn $(BOARD) -e $(INO_FILE)
+	$(ARDUINO_CLI) compile --fqbn $(BOARD) --libraries $(VENDOR_LIBS) -e $(INO_FILE)
 
 upload: build
 	$(ARDUINO_CLI) upload --fqbn $(BOARD) --port $(PORT) $(INO_FILE)

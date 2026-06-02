@@ -14,6 +14,7 @@
 
 #include "src/Camera.h"
 #include "src/MjpegStreamServer.h"
+#include "src/RtspStreamServer.h"
 
 #include "src/PrefEdit.h"
 #include "src/WebHandler.h"
@@ -40,8 +41,10 @@ uint32_t cameraClientId = 0;
 
 CameraHandler camera(wsCamera);
 
-// HTTP-MJPEG stream on its own port + FreeRTOS task (see MjpegStreamServer.h).
+// Streaming servers, each on its own port + FreeRTOS task, consuming the single
+// producer's frames (see StreamServer.h). HTTP-MJPEG on :81, RTSP on :554.
 MjpegStreamServer mjpegServer(camera, 81);
+RtspStreamServer  rtspServer(camera, 554);
 
 // Sign-magnitude drive for one motor: speed -100..100 via PWM on its two input
 // pins (the H-bridge enable is tied high). PWM the input matching the direction
@@ -364,10 +367,12 @@ void setup(void) {
     return;
   }
 
-  // Start the MJPEG stream server (:81) now that WiFi + camera are up. It runs
-  // on its own task and consumes the producer's frames; never grabs the camera.
+  // Start the streaming servers now that WiFi + camera are up. Each runs on its
+  // own task and consumes the producer's frames; neither grabs the camera.
   mjpegServer.begin();
   Serial.println("MJPEG stream server started on :81");
+  rtspServer.begin();
+  Serial.println("RTSP stream server started on :554 (rtsp://<host>:554/mjpeg/1)");
 
   // Apply a persisted XCLK (set via the UI menu). Done here -- after WiFi has
   // associated and the camera is up -- so a bad saved value can't harm the join;

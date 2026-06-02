@@ -38,6 +38,27 @@ public:
     // Set JPEG quality (esp_camera scale: 4..63, LOWER = sharper/bigger frame).
     bool setQuality(uint8_t q);
 
+    // Pixel dimensions of the current streaming resolution. Used by the RTSP
+    // streamer to fill the RTP/JPEG header (which must match the sent frame).
+    uint16_t frameWidth() const  { return framesizeWidth(mFrameSize); }
+    uint16_t frameHeight() const { return framesizeHeight(mFrameSize); }
+    static uint16_t framesizeWidth(framesize_t fs) {
+        switch (fs) {
+            case FRAMESIZE_QVGA: return 320;  case FRAMESIZE_CIF:  return 400;
+            case FRAMESIZE_VGA:  return 640;  case FRAMESIZE_SVGA: return 800;
+            case FRAMESIZE_XGA:  return 1024; case FRAMESIZE_SXGA: return 1280;
+            case FRAMESIZE_UXGA: return 1600; default:            return 640;
+        }
+    }
+    static uint16_t framesizeHeight(framesize_t fs) {
+        switch (fs) {
+            case FRAMESIZE_QVGA: return 240;  case FRAMESIZE_CIF:  return 296;
+            case FRAMESIZE_VGA:  return 480;  case FRAMESIZE_SVGA: return 600;
+            case FRAMESIZE_XGA:  return 768;  case FRAMESIZE_SXGA: return 1024;
+            case FRAMESIZE_UXGA: return 1200; default:            return 480;
+        }
+    }
+
     // Change the camera XCLK at runtime (re-inits the sensor; WiFi untouched).
     // Used to sweep for the highest RF-clean frequency without reflashing.
     // WARNING: a too-high XCLK can swamp 2.4 GHz WiFi (see the XCLK lesson).
