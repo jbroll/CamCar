@@ -106,8 +106,9 @@ private:
     static constexpr framesize_t DEFAULT_FRAMESIZE = FRAMESIZE_VGA;
     static constexpr uint8_t DEFAULT_JPEG_QUALITY = 12;
     static constexpr uint8_t DEFAULT_FPS = MAX_FPS;  // ceiling; the XCLK clock paces below it
-    // Max queued frames before we drop one (bounds latency under backpressure).
-    static constexpr uint32_t MAX_INFLIGHT_FRAMES = 3;
+    // Max queued frames before we drop one. Keep shallow: a deep queue means the
+    // viewer watches stale frames (latency). 1 = always send the freshest.
+    static constexpr uint32_t MAX_INFLIGHT_FRAMES = 1;
     static constexpr int64_t ADAPT_INTERVAL_US = 2000000;  // re-evaluate resolution every 2s
     static constexpr uint8_t DOWNSHIFT_WINDOWS = 3;        // sustained congested windows before downshift (~6s)
     static constexpr uint8_t UPSHIFT_WINDOWS = 2;          // clean windows before an upshift

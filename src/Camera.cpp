@@ -143,10 +143,10 @@ bool CameraHandler::initSensor() {
     config.frame_size = FRAMESIZE_UXGA;
     config.jpeg_quality = mJpegQuality;
 
-    // Frame buffer in PSRAM (needed for larger JPEGs). Double-buffer so the
-    // sensor can fill one while we transmit the other; sendFrame() returns the
-    // buffer immediately and drops frames under backpressure.
-    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    // Frame buffer in PSRAM (needed for larger JPEGs). GRAB_LATEST (not
+    // WHEN_EMPTY) so a grab returns the *freshest* frame and discards stale
+    // buffered ones -- minimises camera-to-screen latency for live control.
+    config.grab_mode = CAMERA_GRAB_LATEST;
     config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
     config.fb_count = psramFound() ? 2 : 1;
 
@@ -340,6 +340,8 @@ void CameraHandler::publishSharedFrame(const uint8_t* data, size_t len) {
 
 // Called from loop() (via sendFrame) while MJPEG owns the grab: forward the
 // latest published frame to the WS client, with the same backpressure drop.
+// Forward the latest published (/stream) frame to the WS client. Pacing is
+// already applied by the caller (sendFrame), so this just delivers.
 bool CameraHandler::forwardSharedToWs() {
     if (mClientId == 0) return false;
     AsyncWebSocketClient* client = mWsCamera.client(mClientId);
@@ -504,30 +506,30 @@ bool CameraHandler::sendFrame() {
         return false;                        // camera deinited (XCLK off)
     }
 
-    // HTTP-MJPEG (/stream) owns the camera grab; forward its published frames to
-    // the WS client. But only while it's *actively* publishing -- if no frame
-    // for >1s (e.g. mHttpStreaming stuck after an unclean /stream close), fall
-    // through and grab normally so the WS path self-heals.
-    if (mHttpStreaming && (esp_timer_get_time() - mLastPublishUs) < 1000000) {
-        return forwardSharedToWs();
+    if (mClientId == 0) {
+        return false;                        // both delivery paths target the WS client
     }
 
-    if (mClientId == 0) {
+    // Single fps-cap pacing gate for the WS viewer, applied BEFORE choosing how
+    // we deliver -- so it covers both the normal grab and the /stream fan-out
+    // forward. Advance the clock per slot whether we send or drop.
+    int64_t now = esp_timer_get_time();
+    if (now - mLastFrameTime < 1000000 / mTargetFPS) {
         return false;
+    }
+    mLastFrameTime = now;
+
+    // While /stream is *actively* grabbing, forward its published frames to the
+    // WS client instead of grabbing again. If it stalls (no publish >1s, e.g.
+    // mHttpStreaming stuck after an unclean close), grab normally -> self-heals.
+    if (mHttpStreaming && (now - mLastPublishUs) < 1000000) {
+        return forwardSharedToWs();
     }
 
     AsyncWebSocketClient* client = mWsCamera.client(mClientId);
     if (!client) {
         return false;
     }
-
-    // Frame-rate pacing. Advance the clock for this slot whether we send or
-    // drop, so dropped slots are paced and counted at the frame rate.
-    int64_t now = esp_timer_get_time();
-    if (now - mLastFrameTime < 1000000 / mTargetFPS) {
-        return false;
-    }
-    mLastFrameTime = now;
 
     // Backpressure: if the send queue is backing up, drop this slot (keeps
     // latency low) and record it as the congestion signal for auto-adapt.
