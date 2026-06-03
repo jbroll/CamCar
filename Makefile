@@ -29,7 +29,14 @@ GEN_ENTRIES := $(GEN)/file-entries.cpp
 ENV_FILE := .env
 GEN_SECRETS := $(GEN)/secrets.h
 
-.PHONY: all clean build install upload monitor tester venv clean-venv
+.PHONY: all clean build install upload monitor tester test venv clean-venv
+
+# Functional tests run against a *live* board over the network. Override the
+# target with HOST, e.g. `make test HOST=camcar-840d8e.local` (the AI-Thinker)
+# or `make test HOST=192.168.1.240`. Extra flags via TESTFLAGS, e.g.
+# `make test TESTFLAGS="--with-xclk --clients 8"`.
+HOST ?= camcar-f0f5bd.local
+TESTFLAGS ?=
 
 all: build
 
@@ -82,6 +89,12 @@ gen-sources: $(GEN_FILES) $(GEN_ENTRIES) $(GEN_SECRETS)
 
 tester: $(VENV)/bin/activate
 	(. $(VENV)/bin/activate; ./tester.py)
+
+# Functional tests against a live board (see HOST/TESTFLAGS above). Stdlib-only
+# (plus ffmpeg for the RTSP tests, which skip cleanly if it is absent), so no
+# venv is required.
+test:
+	$(PYTHON) tests/functional.py --host $(HOST) $(TESTFLAGS)
 
 $(VENV)/bin/activate: requirements.txt
 	python3 -m venv $(VENV)
