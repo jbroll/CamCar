@@ -14,14 +14,15 @@ All workflow goes through the `Makefile`:
 - `make upload` — build + flash over `PORT` (`/dev/ttyACM0`)
 - `make monitor` — serial monitor at 115200 (**see the serial-resets-the-board gotcha below**)
 - `make install` — install esp32 core + libs (ESP32Servo, "Async TCP", "ESP Async WebServer"). Micro-RTSP is **vendored in-repo** (`libraries/Micro-RTSP`, passed via `--libraries`), so it needs no install.
-- `make tester` — Python FastAPI mock (`tester.py`) to exercise the UI without hardware
+- `make tester` — Python FastAPI mock (`tools/tester.py`) to exercise the UI without hardware
+- `make test` — functional suite (`tests/functional.py`) against a live board: every transport + camera-config cycling. Override the target with `HOST=` (e.g. `make test HOST=camcar-840d8e.local`). Stdlib-only (plus ffmpeg for RTSP).
 
 **FQBN:** `esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app`
 - **OPI PSRAM is required** (camera framebuffers, incl. UXGA snapshots).
 - `huge_app` partition (the binary exceeds the default 1.25 MB app slot).
 - Requires esp32 core **3.x** (verified 3.3.5–3.3.8). Uses the **pin-based LEDC API** (`ledcAttach`/`ledcAttachChannel`/`ledcWrite(pin,…)`); the old `ledcSetup`/`ledcAttachPin` were removed in core 3.x and won't compile.
 
-`make build` (`arduino-cli compile`) is the primary way to verify **without a board** — only `upload`/`monitor` need hardware. No unit-test suite. `esp32-em.sh` (QEMU) does not work.
+`make build` (`arduino-cli compile`) is the primary way to verify **without a board** — only `upload`/`monitor`/`test` need hardware. `make test` is a live-board functional suite (no on-host unit tests).
 
 **WiFi credentials** are not in source: copy `.env.example` → `.env` (gitignored), set `WIFI_SSID`/`WIFI_PASSWORD`; `make build` bakes them into `src/gen/secrets.h`. No `.env` → boots a setup SoftAP. (See *WiFi provisioning*.)
 
@@ -87,9 +88,9 @@ All MJPEG (the OV2640 has no H.264 encoder). Verified on both boards: the **sing
 ## Embedded web-asset pipeline
 
 `webroot/` files are gzipped at build time into C++ under `src/gen/` and served from PROGMEM (no filesystem):
-- `file-entry.sh` → `<name>_file.cpp/.h` (gzipped byte array + `FileEntry` struct).
-- `file-system.sh` → `file-entries.cpp` (the `FileSystem::files[]` table).
-- `gen-secrets.sh` → `secrets.h` from `.env`.
+- `scripts/file-entry.sh` → `<name>_file.cpp/.h` (gzipped byte array + `FileEntry` struct).
+- `scripts/file-system.sh` → `file-entries.cpp` (the `FileSystem::files[]` table).
+- `scripts/gen-secrets.sh` → `secrets.h` from `.env`.
 
 The `Makefile` `gen-sources` target runs all three before compiling. **`src/gen/` is generated and gitignored — never edit by hand; edit `webroot/`/`.env` and rebuild.** The Arduino IDE won't regenerate them — use `make`. `WebHandler::begin` serves them via an `onNotFound` lookup with `Content-Encoding: gzip`.
 
@@ -101,7 +102,7 @@ The `Makefile` `gen-sources` target runs all three before compiling. **`src/gen/
 
 ## Config persistence (`src/PrefEdit.h`)
 
-NVS key/values via `Preferences` (namespace `config`, keys in `Prefs.h`), editable at `/config`. `initStorage()` opens NVS before the server exists (used by `setupWiFi()` via `get`/`set`); changing `ssid`/`password` schedules a deferred reboot via `PrefEdit::loop()` so the HTTP response flushes first.
+NVS key/values via `Preferences` (namespace `config`, keys in `src/Prefs.h`), editable at `/config`. `initStorage()` opens NVS before the server exists (used by `setupWiFi()` via `get`/`set`); changing `ssid`/`password` schedules a deferred reboot via `PrefEdit::loop()` so the HTTP response flushes first.
 
 ## Gotchas & hard-won lessons
 
@@ -111,4 +112,4 @@ NVS key/values via `Preferences` (namespace `config`, keys in `Prefs.h`), editab
 - **Single camera viewer:** the firmware streams to one `mClientId`; a second `/Camera` connection steals the stream. Two tabs/probes fight each other.
 - **WiFi credentials were committed in plaintext historically and were scrubbed from git history** (force-pushed). Treat the old `lucky7`/`snowblower` password as compromised — rotate it. `.env` and `src/gen/secrets.h` are gitignored.
 - Header-only classes define inline static members in the `.h` (`PrefEdit`) — include in exactly one TU.
-- The repo root holds stale `*.ino-save` snapshots; only `CamCar.ino` + `src/` build. `README.md` is outdated — trust the `Makefile` and this file.
+- The build is `CamCar.ino` (root, required by Arduino) + everything under `src/`. Build/asset-gen scripts live in `scripts/`, the UI mock + Python deps in `tools/`, the live-board suite in `tests/`.

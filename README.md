@@ -62,7 +62,7 @@ make install              # esp32 core 3.x + libs (ESP32Servo, Async TCP, ESP As
 make build                # regenerate embedded web assets, then arduino-cli compile
 make upload               # build + flash over PORT (S3: /dev/ttyACM0, CAM: /dev/ttyUSB0)
 make monitor              # serial monitor @ 115200  (resets the board — see Gotchas)
-make tester               # Python mock (tester.py) to exercise the UI without hardware
+make tester               # Python mock (tools/tester.py) to exercise the UI without hardware
 
 make build  TARGET=cam    # ...any target for the AI-Thinker ESP32-CAM
 ```

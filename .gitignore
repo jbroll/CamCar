@@ -5,6 +5,7 @@ error.log
 build/
 venv/
 __pycache__/
+.ruff_cache/
 
 .env
 src/gen/

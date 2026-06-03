@@ -8,7 +8,7 @@
 #include <sstream>
 #include <ESP32Servo.h>
 
-#include "./Prefs.h"
+#include "src/Prefs.h"
 #include "src/gen/secrets.h"
 #include "src/board_config.h"
 

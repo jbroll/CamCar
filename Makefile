@@ -75,20 +75,20 @@ $(GEN):
 	mkdir -p $(GEN)
 
 $(GEN)/%_file.cpp: $(WEBROOT)/% | $(GEN)
-	./file-entry.sh $<
+	./scripts/file-entry.sh $<
 
 $(GEN_ENTRIES): $(GEN_FILES)
-	./file-system.sh
+	./scripts/file-system.sh
 
 # Regenerate when .env changes; with no .env present this builds once with
 # empty credential defaults (firmware then falls back to SoftAP setup mode).
 $(GEN_SECRETS): $(wildcard $(ENV_FILE)) | $(GEN)
-	./gen-secrets.sh
+	./scripts/gen-secrets.sh
 
 gen-sources: $(GEN_FILES) $(GEN_ENTRIES) $(GEN_SECRETS)
 
 tester: $(VENV)/bin/activate
-	(. $(VENV)/bin/activate; ./tester.py)
+	(. $(VENV)/bin/activate; ./tools/tester.py)
 
 # Functional tests against a live board (see HOST/TESTFLAGS above). Stdlib-only
 # (plus ffmpeg for the RTSP tests, which skip cleanly if it is absent), so no
@@ -96,10 +96,10 @@ tester: $(VENV)/bin/activate
 test:
 	$(PYTHON) tests/functional.py --host $(HOST) $(TESTFLAGS)
 
-$(VENV)/bin/activate: requirements.txt
+$(VENV)/bin/activate: tools/requirements.txt
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements.txt
+	$(PIP) install -r tools/requirements.txt
 
 venv: $(VENV)/bin/activate
 
