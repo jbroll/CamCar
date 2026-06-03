@@ -12,10 +12,13 @@ overview.
 
 ## Features
 
-- **Live video** two ways, concurrently on the same frames:
-  - in-page WebSocket JPEG stream (the web UI)
-  - **HTTP-MJPEG** at `GET /stream` (`multipart/x-mixed-replace`) for VLC,
-    ffmpeg, Home Assistant, NVRs
+- **Live video** three ways, all fed concurrently from one paced capture
+  (a single producer fans each frame out to every viewer):
+  - in-page WebSocket JPEG stream (the web UI; one viewer at a time)
+  - **HTTP-MJPEG**, **multi-client**, at `:81/stream`
+    (`multipart/x-mixed-replace`) for VLC, ffmpeg, Home Assistant, NVRs, Motion
+  - **RTSP / RTP-JPEG**, **multi-client**, at `rtsp://<host>:554/mjpeg/1`
+    (TCP-interleaved or UDP) for NVR-native clients
 - **Tank drive** — proportional differential drive on both tracks (sign-magnitude
   PWM), plus **pan/tilt** camera gimbal, both via on-screen multi-touch joysticks
 - **High-res snapshot** — `GET /snapshot?res=<0–4>[&download=1]`, up to UXGA
@@ -79,7 +82,9 @@ setup access point (`CamCar-setup` / `camcarsetup`) serving
 2. Drive with the left joystick, aim the camera with the right; the top-right
    menus set resolution / quality / camera clock; buttons handle lock, headlight,
    snapshot, and camera stop.
-3. For an external viewer (VLC etc.) open `http://<host>/stream`.
+3. For an external viewer (VLC, ffmpeg, NVR, Motion) open the HTTP-MJPEG stream
+   at `http://<host>:81/stream` or the RTSP stream at `rtsp://<host>:554/mjpeg/1`.
+   Both accept several simultaneous clients.
 
 ### Endpoints
 
@@ -88,7 +93,8 @@ setup access point (`CamCar-setup` / `camcarsetup`) serving
 | `/` | web UI |
 | `/Camera` (WS) | live JPEG frames |
 | `/CarInput` (WS) | drive / camera / settings commands |
-| `/stream` | HTTP-MJPEG (`multipart/x-mixed-replace`) |
+| `:81/stream` | HTTP-MJPEG (`multipart/x-mixed-replace`), multi-client |
+| `rtsp://<host>:554/mjpeg/1` | RTSP / RTP-JPEG, multi-client (TCP or UDP) |
 | `/snapshot?res=<0–4>[&download=1]` | one high-res still (up to UXGA) |
 | `/config` | WiFi + settings editor (NVS) |
 
@@ -112,8 +118,10 @@ clears the air). Full background is in `CLAUDE.md`.
 - **Opening a serial monitor resets the board** (the USB-serial chip toggles
   reset), so the video stream drops. Use the in-browser stats overlay for live
   monitoring, not `make monitor`.
-- **Single camera viewer** — the firmware streams to one WS client at a time; a
-  second `/Camera` connection steals the stream.
+- **Single WS viewer** — the in-page `/Camera` WebSocket streams to one client at
+  a time; a second `/Camera` connection steals the stream. (The `:81` MJPEG and
+  `:554` RTSP servers each serve several concurrent clients — only the WS path is
+  single-viewer.)
 - `src/gen/` is generated and gitignored — edit `webroot/` / `.env` and rebuild.
 
 ## License & credits
