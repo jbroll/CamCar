@@ -113,8 +113,10 @@ def mjpeg_frames(host, duration, port=81, path="/stream", timeout=12):
 
     try:
         while time.time() < deadline:
-            # find the next part header and its Content-Length
-            while b"Content-Length:" not in buf:
+            # read until the full part header (ending in a blank line) is
+            # buffered — not just Content-Length:, which can arrive before the
+            # terminating CRLFCRLF and would make .index() raise.
+            while b"\r\n\r\n" not in buf:
                 fill(len(buf) + 1)
             hdr_end = buf.index(b"\r\n\r\n")
             header = buf[:hdr_end].decode(errors="replace")
@@ -285,13 +287,15 @@ class CarInput:
 # ---------------------------------------------------------------------------
 # RTSP (via ffmpeg)
 # ---------------------------------------------------------------------------
-def rtsp_frame_count(host, transport, duration):
+def rtsp_frame_count(host, transport, duration, kill_after=None):
     url = f"rtsp://{host}:554/mjpeg/1"
+    # NB: no -rw_timeout / -stimeout — option names vary across ffmpeg builds
+    # ("Option not found" aborts the run). The subprocess timeout below is the
+    # hang guard; UDP RTP setup occasionally wedges, so callers retry.
     proc = subprocess.run(
         ["ffmpeg", "-hide_banner", "-rtsp_transport", transport,
-         "-rw_timeout", "15000000",       # 15s I/O timeout so ffmpeg can't hang (slow boards set up slowly)
          "-i", url, "-t", str(duration), "-f", "null", "-"],
-        capture_output=True, text=True, timeout=duration + 45)
+        capture_output=True, text=True, timeout=kill_after or (duration + 45))
     last = 0
     for tok in proc.stderr.split():
         if tok.startswith("frame="):
@@ -388,11 +392,18 @@ def make_tests(host, args):
     def test_rtsp_udp():
         if not shutil.which("ffmpeg"):
             raise SkipTest("ffmpeg not installed")
-        n = rtsp_frame_count(host, "udp", args.dur)
-        if n == 0:                         # UDP setup can race; one retry
+        # UDP RTP setup occasionally wedges; cap each try and retry rather than
+        # waiting out the long subprocess timeout.
+        n = 0
+        for _ in range(3):
+            try:
+                n = rtsp_frame_count(host, "udp", args.dur, kill_after=args.dur + 8)
+            except subprocess.TimeoutExpired:
+                n = 0
+            if n > 0:
+                break
             time.sleep(1.0)
-            n = rtsp_frame_count(host, "udp", args.dur)
-        assert n > 0, "no frames"
+        assert n > 0, "no frames (UDP RTP setup kept timing out)"
         return f"{n} frames ({n/args.dur:.1f} fps)"
 
     def test_rtsp_concurrent():
