@@ -2,10 +2,6 @@
 
 PYTHON=python3
 ARDUINO_CLI=arduino-cli
-GZIP_SCRIPT=gzipper.py
-VENV := venv
-PYTHON_VENV := $(VENV)/bin/python
-PIP := $(VENV)/bin/pip
 
 # Board target: s3 (Freenove ESP32-S3-WROOM CAM, default) or cam (AI-Thinker
 # ESP32-CAM). Override per-invocation, e.g. `make upload TARGET=cam`.
@@ -29,7 +25,7 @@ GEN_ENTRIES := $(GEN)/file-entries.cpp
 ENV_FILE := .env
 GEN_SECRETS := $(GEN)/secrets.h
 
-.PHONY: all clean build install upload monitor tester test venv clean-venv
+.PHONY: all clean build install upload monitor test
 
 # Functional tests run against a *live* board over the network. Override the
 # target with HOST, e.g. `make test HOST=camcar-840d8e.local` (the AI-Thinker)
@@ -87,22 +83,9 @@ $(GEN_SECRETS): $(wildcard $(ENV_FILE)) | $(GEN)
 
 gen-sources: $(GEN_FILES) $(GEN_ENTRIES) $(GEN_SECRETS)
 
-tester: $(VENV)/bin/activate
-	(. $(VENV)/bin/activate; ./tools/tester.py)
-
 # Functional tests against a live board (see HOST/TESTFLAGS above). Stdlib-only
 # (plus ffmpeg for the RTSP tests, which skip cleanly if it is absent), so no
-# venv is required.
+# venv or pip install is required.
 test:
 	$(PYTHON) tests/functional.py --host $(HOST) $(TESTFLAGS)
-
-$(VENV)/bin/activate: tools/requirements.txt
-	python3 -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -r tools/requirements.txt
-
-venv: $(VENV)/bin/activate
-
-clean-venv:
-	rm -rf $(VENV)
 

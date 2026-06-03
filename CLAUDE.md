@@ -14,8 +14,7 @@ All workflow goes through the `Makefile`:
 - `make upload` — build + flash over `PORT` (`/dev/ttyACM0`)
 - `make monitor` — serial monitor at 115200 (**see the serial-resets-the-board gotcha below**)
 - `make install` — install esp32 core + libs (ESP32Servo, "Async TCP", "ESP Async WebServer"). Micro-RTSP is **vendored in-repo** (`libraries/Micro-RTSP`, passed via `--libraries`), so it needs no install.
-- `make tester` — Python FastAPI mock (`tools/tester.py`) to exercise the UI without hardware
-- `make test` — functional suite (`tests/functional.py`) against a live board: every transport + camera-config cycling. Override the target with `HOST=` (e.g. `make test HOST=camcar-840d8e.local`). Stdlib-only (plus ffmpeg for RTSP).
+- `make test` — functional suite (`tests/functional.py`) against a live board: every transport + camera-config cycling. Override the target with `HOST=` (e.g. `make test HOST=camcar-840d8e.local`). Stdlib-only (plus ffmpeg for RTSP) — no venv.
 
 **FQBN:** `esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app`
 - **OPI PSRAM is required** (camera framebuffers, incl. UXGA snapshots).
