@@ -18,7 +18,6 @@
 
 #include "src/PrefEdit.h"
 #include "src/WebHandler.h"
-#include "src/TankDrive.h"
 
 Servo panServo;
 Servo tiltServo;

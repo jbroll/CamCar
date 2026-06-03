@@ -77,4 +77,13 @@ private:
 
     uint16_t m_RtpClientPort;      // RTP receiver port on client (in host byte order!)
     uint16_t m_RtcpClientPort;     // RTCP receiver port on client (in host byte order!)
+
+    // CamCar patch: the request-gluing buffer/cursor/state used to be function
+    // statics in handleRequests(), shared by ALL sessions. With multiple
+    // concurrent RTSP sessions (which CamCar supports) a partial request from
+    // one session bled into another's parse. Per-session members fix that.
+    enum HdrState { hdrStateUnknown, hdrStateGotMethod, hdrStateInvalid };
+    unsigned m_RecvBufPos;                 // cursor into m_RecvBuf
+    HdrState m_HdrState;                    // header-parse state across reads
+    char     m_RecvBuf[RTSP_BUFFER_SIZE];   // per-session request/response buffer
 };

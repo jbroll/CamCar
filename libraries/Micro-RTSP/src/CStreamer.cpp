@@ -238,11 +238,14 @@ bool CStreamer::handleRequests(uint32_t readTimeoutMs)
 
         element = element->m_Next;
 
-        if (session->m_stopped) 
-        {
-            // remove session here, so we wont have to send to it
-            delete session;
-        }
+        // CamCar patch: do NOT delete the session here. Its lifetime is owned
+        // by RtspStreamServer's reap loop, which also frees the WiFiClient and
+        // decrements the producer's stream-client count. Stock Micro-RTSP
+        // deleted here too, which double-freed (and use-after-free read
+        // m_stopped) on the ordinary TEARDOWN/disconnect path and rebooted the
+        // board. A stopped session is left linked for one extra pass;
+        // SendRtpPacket already skips stopped sessions and the reaper removes
+        // it next iteration.
     }
 
     return retVal;

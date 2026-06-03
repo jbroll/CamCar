@@ -107,6 +107,8 @@ framesize_t CameraHandler::getResolution() const { return mFrameSize; }
 
 CameraHandler::~CameraHandler() {
     esp_camera_deinit();
+    if (mShared[0]) { free(mShared[0]); mShared[0] = nullptr; }
+    if (mShared[1]) { free(mShared[1]); mShared[1] = nullptr; }
 }
 
 // (Re-)initialise the camera at mXclkFreq and re-apply all sensor settings.
@@ -198,6 +200,13 @@ bool CameraHandler::begin() {
 // touched, so the board stays reachable -- unless the new XCLK itself swamps
 // 2.4 GHz WiFi, in which case recover by reflashing.
 bool CameraHandler::setXclkFreq(uint32_t hz) {
+    // An auto-tune scan drives initSensor() from scanTick() on the loop task.
+    // This call runs on async_tcp (the /CarInput handler), so honoring it here
+    // would race two concurrent deinit/init sequences. Reject during a scan.
+    if (mScanning) {
+        Serial.println("[xclk] ignored: auto-tune scan in progress");
+        return false;
+    }
     mXclkFreq = hz;
     if (mCameraStopped) {           // record only; applied on next start
         Serial.printf("[xclk] -> %lu Hz (stored; camera stopped)\n", (unsigned long)hz);

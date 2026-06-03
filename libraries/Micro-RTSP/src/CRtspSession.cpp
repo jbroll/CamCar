@@ -30,6 +30,9 @@ CRtspSession::CRtspSession(SOCKET aClient, CStreamer * aStreamer) : LinkedListEl
     m_CSeq = 0; // CSeq sequense must be kept through the whole session
     m_RtspCmdType = RTSP_UNKNOWN;
     debug = false;
+
+    m_RecvBufPos = 0;                 // per-session request-gluing state
+    m_HdrState   = hdrStateUnknown;
 }
 
 CRtspSession::~CRtspSession()
@@ -522,19 +525,22 @@ bool CRtspSession::handleRequests( uint32_t readTimeoutMs )
     if ( m_stopped )
         return false; // Already closed down
 
-    static unsigned bufPos = 0; // current position into receiving buffer. used to glue split requests.
-    static enum { hdrStateUnknown, hdrStateGotMethod, hdrStateInvalid } state = hdrStateUnknown;
-    static char RecvBuf[RTSP_BUFFER_SIZE];   // Note: we assume single threaded, this large buf we keep off of the tiny stack
+    // CamCar patch: these were function statics shared across all sessions,
+    // which corrupted parsing when multiple sessions interleaved split
+    // requests. They are now per-session members (see CRtspSession.h).
+    unsigned &bufPos = m_RecvBufPos; // current position into receiving buffer. used to glue split requests.
+    HdrState &state  = m_HdrState;
+    char *RecvBuf    = m_RecvBuf;
 
-    if ( bufPos == 0 || bufPos >= sizeof( RecvBuf ) - 1 ) // in case of bad client
+    if ( bufPos == 0 || bufPos >= RTSP_BUFFER_SIZE - 1 ) // in case of bad client
     {
-        memset( RecvBuf, 0x00, sizeof( RecvBuf ) );
+        memset( RecvBuf, 0x00, RTSP_BUFFER_SIZE );
         bufPos = 0;
         state = hdrStateUnknown;
     }
 
     // we always read 1 byte less than the buffer length, so all string ops here will not panic
-    int res = socketread( m_RtspClient, RecvBuf + bufPos, sizeof( RecvBuf ) - bufPos - 1, readTimeoutMs );
+    int res = socketread( m_RtspClient, RecvBuf + bufPos, RTSP_BUFFER_SIZE - bufPos - 1, readTimeoutMs );
     if ( res > 0 )
     {
         bufPos += res;
@@ -579,7 +585,7 @@ bool CRtspSession::handleRequests( uint32_t readTimeoutMs )
             if ( state == hdrStateInvalid ) // tossing some immediate answer, so client don't fall into endless stupor
             {
                 // not sure which code is more appropriate and if CSeq is needed here?
-                int l = snprintf( RecvBuf, sizeof(RecvBuf), "RTSP/1.0 400 Bad Request\r\nCSeq: %u\r\n\r\n", m_CSeq );
+                int l = snprintf( RecvBuf, RTSP_BUFFER_SIZE, "RTSP/1.0 400 Bad Request\r\nCSeq: %u\r\n\r\n", m_CSeq );
                 socketsend( m_RtspClient, RecvBuf, l );
                 bufPos = 0;
                 return false;
