@@ -36,7 +36,7 @@ protected:
     // larger than this, so equal sizing means producer frames always fit.
     static constexpr size_t FRAME_CAP   = 180 * 1024;
     static constexpr size_t HDR_CAP     = 96;     // per-frame multipart boundary
-    static constexpr int    MAX_CLIENTS = 4;      // bounds PSRAM use (~180KB each)
+    static constexpr int    MAX_CLIENTS = 8;      // bounds PSRAM use (~180KB each)
 
     struct Client {
         NetworkClient sock;
