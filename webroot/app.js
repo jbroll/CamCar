@@ -227,4 +227,64 @@ window.onload = function () {
         a.click();
         a.remove();
     });
+
+    // ---- Config dialog (hamburger) ----
+    var overlay = document.getElementById("configOverlay");
+    function openDialog() {
+        // Safe-stop on open so a held joystick command doesn't persist while
+        // the joysticks are disabled behind the dialog.
+        if (websocketCarInput) { websocketCarInput.send("tank 0 0"); websocketCarInput.send("camr 0 0"); }
+        document.body.classList.add("dialog-open");
+        overlay.hidden = false;
+    }
+    function closeDialog() {
+        overlay.hidden = true;
+        document.body.classList.remove("dialog-open");
+    }
+    document.getElementById("menuBtn").addEventListener("click", openDialog);
+    document.getElementById("cfgClose").addEventListener("click", closeDialog);
+    overlay.addEventListener("click", function (e) {
+        if (e.target === overlay) closeDialog();   // tap the scrim to close
+    });
+
+    // ---- Firmware (OTA) upload ----
+    document.getElementById("otaBtn").addEventListener("click", function () {
+        var file = document.getElementById("otaFile").files[0];
+        var status = document.getElementById("otaStatus");
+        var bar = document.getElementById("otaBar");
+        if (!file) { status.textContent = "Choose a .bin first"; return; }
+        var user = sessionStorage.getItem("otaUser") || prompt("Firmware user", "admin");
+        var pass = sessionStorage.getItem("otaPass") || prompt("Firmware password");
+        if (!user || !pass) return;
+        sessionStorage.setItem("otaUser", user);
+        sessionStorage.setItem("otaPass", pass);
+
+        var fd = new FormData();
+        fd.append("firmware", file, file.name);
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/update", true);
+        xhr.setRequestHeader("Authorization", "Basic " + btoa(user + ":" + pass));
+        xhr.upload.onprogress = function (e) {
+            if (e.lengthComputable) {
+                var pct = Math.round(e.loaded / e.total * 100);
+                bar.value = pct;
+                status.textContent = "Uploading " + pct + "%";
+            }
+        };
+        xhr.onload = function () {
+            if (xhr.status === 200) {
+                status.textContent = "OK — rebooting…";
+            } else if (xhr.status === 401) {
+                status.textContent = "Auth failed";
+                sessionStorage.removeItem("otaUser");
+                sessionStorage.removeItem("otaPass");
+            } else {
+                status.textContent = "Failed: " + (xhr.responseText || xhr.status);
+            }
+        };
+        xhr.onerror = function () { status.textContent = "Upload error"; };
+        status.textContent = "Starting…";
+        bar.value = 0;
+        xhr.send(fd);
+    });
 };

@@ -11,6 +11,8 @@
         <img id="cameraImage" src="" alt="Camera Stream">
     </div>
 
+    <button id="menuBtn" type="button" title="Settings">&#9776;</button>
+
     <div id="controlsContainer">
         <div id="motionJoystick" class="joystick-container">
             <div class="joystick-base"></div>
@@ -24,8 +26,29 @@
                 <span id="battery">bat --</span>
                 <span id="scan"></span>
             </div>
-            <div id="resBar">
+            <div id="mainBar">
                 <button id="camBtn" type="button" title="Stop the camera (clears WiFi for solid control); tap again to restart">&#9209;</button>
+                <button id="lightBtn" type="button" title="Headlight on/off">&#128161;</button>
+                <button id="snapView" type="button" title="View snapshot in new tab">&#128247;</button>
+                <button id="snapSave" type="button" title="Download snapshot">&#11015;</button>
+            </div>
+        </div>
+
+        <div id="cameraPanTilt" class="joystick-container">
+            <div class="joystick-base"></div>
+            <div class="joystick-thumb"></div>
+        </div>
+    </div>
+
+    <div id="configOverlay" hidden>
+        <div id="configDialog">
+            <div class="cfg-head">
+                <span>Settings</span>
+                <button id="cfgClose" type="button" title="Close">&#10005;</button>
+            </div>
+
+            <div class="cfg-group">
+                <h3>Camera</h3>
                 <button id="lockBtn" type="button" title="Lock resolution (disable auto-adapt)">&#128275;</button>
                 <select id="resolutionSelect" title="Camera resolution (max)">
                     <option value="0">320x240</option>
@@ -53,11 +76,16 @@
                     <option value="20">FPS 20</option>
                     <option value="30" selected>FPS 30</option>
                 </select>
+            </div>
+
+            <div class="cfg-group">
+                <h3>Tuning</h3>
                 <select id="xclkSelect" title="Camera clock (XCLK MHz). Higher = more fps but can disturb 2.4GHz WiFi; clean values are per-board (use Auto-tune, or watch the fps). 8 is always safe. Persisted; boots safe at 8 if unset."></select>
                 <button id="tuneBtn" type="button" title="Auto-tune XCLK: scans frequencies and picks the fastest clean one for your WiFi (~40s)">&#128269;</button>
             </div>
-            <div id="snapshotBar">
-                <button id="lightBtn" type="button" title="Headlight on/off">&#128161;</button>
+
+            <div class="cfg-group">
+                <h3>Snapshot</h3>
                 <select id="snapResSelect" title="Snapshot resolution">
                     <option value="0">640x480</option>
                     <option value="1">800x600</option>
@@ -65,14 +93,19 @@
                     <option value="3">1280x1024</option>
                     <option value="4" selected>1600x1200</option>
                 </select>
-                <button id="snapView" type="button" title="View snapshot in new tab">&#128247;</button>
-                <button id="snapSave" type="button" title="Download snapshot">&#11015;</button>
             </div>
-        </div>
 
-        <div id="cameraPanTilt" class="joystick-container">
-            <div class="joystick-base"></div>
-            <div class="joystick-thumb"></div>
+            <div class="cfg-group">
+                <h3>Firmware Update</h3>
+                <input id="otaFile" type="file" accept=".bin">
+                <button id="otaBtn" type="button">Upload</button>
+                <progress id="otaBar" value="0" max="100"></progress>
+                <span id="otaStatus"></span>
+            </div>
+
+            <div class="cfg-group">
+                <a href="/config" target="_blank">WiFi / advanced config &#8599;</a>
+            </div>
         </div>
     </div>
 

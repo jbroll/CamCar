@@ -115,18 +115,15 @@ body {
     color: #f55;
 }
 
-#resBar,
-#snapshotBar {
+/* Main on-screen control bar (stop-camera, headlight, snapshot). */
+#mainBar {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 4px;
 }
 
-#resBar select,
-#resBar button,
-#snapshotBar select,
-#snapshotBar button {
+#mainBar button {
     background: rgba(0, 0, 0, 0.6);
     color: #0f0;
     border: 1px solid #0f0;
@@ -137,9 +134,116 @@ body {
     box-sizing: border-box;
 }
 
+/* Hamburger: fixed top-right, above the video. */
+#menuBtn {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 20;
+    background: rgba(0, 0, 0, 0.6);
+    color: #0f0;
+    border: 1px solid #0f0;
+    font: 22px monospace;
+    padding: 6px 12px;
+    min-height: 44px;
+    border-radius: 5px;
+}
+
+/* Config modal: dimmed scrim over the still-live video. */
+#configOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-y: auto;
+}
+
+#configOverlay[hidden] {
+    display: none;
+}
+
+#configDialog {
+    margin: 6vh 0;
+    width: min(92vw, 460px);
+    background: #111;
+    border: 1px solid #0f0;
+    border-radius: 8px;
+    padding: 12px;
+    box-sizing: border-box;
+    color: #0f0;
+    font-family: monospace;
+}
+
+.cfg-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 18px;
+    margin-bottom: 8px;
+}
+
+.cfg-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(0, 255, 0, 0.25);
+}
+
+.cfg-group h3 {
+    width: 100%;
+    margin: 0 0 4px;
+    font-size: 13px;
+    color: #6f6;
+    font-weight: normal;
+}
+
+#configDialog select,
+#configDialog button,
+#configDialog input[type="file"] {
+    background: rgba(0, 0, 0, 0.6);
+    color: #0f0;
+    border: 1px solid #0f0;
+    font: 18px monospace;
+    padding: 8px 10px;
+    border-radius: 5px;
+    min-height: 44px;
+    box-sizing: border-box;
+}
+
+#cfgClose {
+    min-height: 36px;
+    padding: 4px 10px;
+}
+
+#configDialog a {
+    color: #6cf;
+}
+
+#otaBar {
+    width: 100%;
+    height: 16px;
+}
+
+#otaStatus {
+    width: 100%;
+    font-size: 13px;
+    color: #6f6;
+}
+
 /* Lit/active state for the lock and headlight toggles. */
 #lockBtn.active,
 #lightBtn.active {
     background: rgba(0, 255, 0, 0.85);
     color: #000;
+}
+
+/* Disable the joysticks while the dialog is open (avoid accidental drive). */
+body.dialog-open .joystick-container {
+    pointer-events: none;
+    opacity: 0.4;
 }
