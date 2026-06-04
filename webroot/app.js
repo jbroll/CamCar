@@ -270,10 +270,6 @@ window.onload = function () {
     // ---- Network & Security save (folds the old /config page into the dialog) ----
     document.getElementById("cfgSave").addEventListener("click", function () {
         var status = document.getElementById("cfgStatus");
-        var auth = sessionStorage.getItem("devicePass") || prompt("Device password");
-        if (!auth) return;
-        sessionStorage.setItem("devicePass", auth);
-
         var params = new URLSearchParams();
         params.set("hostname", document.getElementById("cfgHostname").value.trim());
         params.set("ssid", document.getElementById("cfgSsid").value.trim());
@@ -285,26 +281,23 @@ window.onload = function () {
         status.textContent = "Saving…";
         fetch("/config", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": "Basic " + btoa(":" + auth)
-            },
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: params.toString()
         }).then(function (r) {
-            if (r.status === 401) {
-                sessionStorage.removeItem("devicePass");
-                status.textContent = "Wrong device password";
-                return null;
-            }
+            if (r.status === 401) { location.reload(); return null; }
             return r.text();
         }).then(function (t) {
             if (t === null) return;
-            if (dpw) sessionStorage.setItem("devicePass", dpw);   // new pass for next auth
+            document.getElementById("cfgPass").value = "";
+            document.getElementById("cfgDevicePass").value = "";
+            if (dpw) {   // device password changed -> old cookie is now invalid
+                status.textContent = "Password changed — log in again";
+                setTimeout(function () { location.reload(); }, 1200);
+                return;
+            }
             status.textContent = (t.indexOf("reboot") >= 0)
                 ? "Saved — rebooting to apply WiFi…"
                 : "Saved.";
-            document.getElementById("cfgPass").value = "";
-            document.getElementById("cfgDevicePass").value = "";
         }).catch(function () { status.textContent = "Save failed"; });
     });
 
@@ -314,16 +307,11 @@ window.onload = function () {
         var status = document.getElementById("otaStatus");
         var bar = document.getElementById("otaBar");
         if (!file) { status.textContent = "Choose a .bin first"; return; }
-        var pass = sessionStorage.getItem("devicePass") || prompt("Device password");
-        if (!pass) return;
-        sessionStorage.setItem("devicePass", pass);
 
         var fd = new FormData();
         fd.append("firmware", file, file.name);
         var xhr = new XMLHttpRequest();
         xhr.open("POST", "/update", true);
-        // Single device password, no username (empty user in HTTP Basic).
-        xhr.setRequestHeader("Authorization", "Basic " + btoa(":" + pass));
         xhr.upload.onprogress = function (e) {
             if (e.lengthComputable) {
                 var pct = Math.round(e.loaded / e.total * 100);
@@ -335,8 +323,7 @@ window.onload = function () {
             if (xhr.status === 200) {
                 status.textContent = "OK — rebooting…";
             } else if (xhr.status === 401) {
-                status.textContent = "Wrong device password";
-                sessionStorage.removeItem("devicePass");
+                location.reload();
             } else {
                 status.textContent = "Failed: " + (xhr.responseText || xhr.status);
             }

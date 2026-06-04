@@ -316,9 +316,24 @@ void setup(void) {
     PrefEdit::set("device_pass", DEVICE_PASSWORD_DEFAULT);
   OtaWeb::begin(&server, &camera);
 
-  // Current network settings for the config dialog to pre-fill (non-secret
-  // values only; the password is write-only -- blank means unchanged).
+  // Login: a correct device password sets the camcar_auth cookie that gates the
+  // whole port-80 app (UI, websockets, config, OTA, snapshot). :81/:554 are
+  // separate servers and stay open for NVR/Motion clients.
+  server.on("/login", HTTP_POST, [](AsyncWebServerRequest* request) {
+    String pass = request->hasParam("password", true)
+                  ? request->getParam("password", true)->value() : String();
+    bool ok = pass.length() && pass == PrefEdit::get("device_pass", "camcar");
+    AsyncWebServerResponse* resp = request->beginResponse(303);
+    resp->addHeader("Location", ok ? "/" : "/?e=1");
+    if (ok) {
+      resp->addHeader("Set-Cookie",
+        "camcar_auth=" + pass + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax");
+    }
+    request->send(resp);
+  });
+
   server.on("/config.json", HTTP_GET, [](AsyncWebServerRequest* request) {
+    if (!PrefEdit::checkAuth(request)) { request->send(401); return; }
     String json = "{";
     json += "\"hostname\":\"" + PrefEdit::get("hostname") + "\",";
     json += "\"hostname_effective\":\"" + networkHostname() + "\",";
@@ -332,6 +347,7 @@ void setup(void) {
   // High-res still: GET /snapshot?res=<index>[&download=1]. Pauses the stream,
   // captures one frame at the requested size, then resumes.
   server.on("/snapshot", HTTP_GET, [](AsyncWebServerRequest* request) {
+    if (!PrefEdit::checkAuth(request)) { request->send(401); return; }
     uint8_t idx = 0;
     if (request->hasParam("res")) {
       idx = (uint8_t)request->getParam("res")->value().toInt();
@@ -370,10 +386,13 @@ void setup(void) {
   // Pacing cap is just a high ceiling -- the camera clock (XCLK, via the
   // blocking grab) is the real pacer, so fps follows the selected XCLK.
   camera.setFPS(CameraHandler::MAX_FPS);
+  AwsHandshakeHandler gate = [](AsyncWebServerRequest* r) { return PrefEdit::checkAuth(r); };
   wsCamera.onEvent(onCameraWebSocketEvent);
+  wsCamera.handleHandshake(gate);
   server.addHandler(&wsCamera);
 
   wsCarInput.onEvent(onCarInputWebSocketEvent);
+  wsCarInput.handleHandshake(gate);
   server.addHandler(&wsCarInput);
 
   server.begin();

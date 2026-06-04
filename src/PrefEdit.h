@@ -50,9 +50,23 @@ public:
         return getValue(var.c_str());
     }
 
-    // Empty-username Basic auth against the device password (shared with /update).
+    // Authed via the camcar_auth cookie (browser, incl. WS handshake) or
+    // empty-username Basic (curl/make). Shared by the whole port-80 app.
     static bool checkAuth(AsyncWebServerRequest* request) {
-        return request->authenticate("", get("device_pass", "camcar").c_str());
+        String pass = get("device_pass", "camcar");
+        const AsyncWebHeader* cookie = request->getHeader("Cookie");
+        if (cookie && authCookie(cookie->value()) == pass) {
+            return true;
+        }
+        return request->authenticate("", pass.c_str());
+    }
+
+    static String authCookie(const String& cookies) {
+        int i = cookies.indexOf("camcar_auth=");
+        if (i < 0) return "";
+        i += 12;
+        int end = cookies.indexOf(';', i);
+        return end < 0 ? cookies.substring(i) : cookies.substring(i, end);
     }
 
     static void handleUpdate(AsyncWebServerRequest* request) {
