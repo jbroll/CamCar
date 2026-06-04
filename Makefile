@@ -114,7 +114,7 @@ $(GEN_ENTRIES): $(GEN_FILES)
 
 # Regenerate when .env changes; with no .env present this builds once with
 # empty credential defaults (firmware then falls back to SoftAP setup mode).
-$(GEN_SECRETS): $(wildcard $(ENV_FILE)) | $(GEN)
+$(GEN_SECRETS): $(wildcard $(ENV_FILE)) scripts/gen-secrets.sh | $(GEN)
 	./scripts/gen-secrets.sh
 
 gen-sources: $(GEN_FILES) $(GEN_ENTRIES) $(GEN_SECRETS)

@@ -50,7 +50,15 @@ public:
         return getValue(var.c_str());
     }
 
+    // Empty-username Basic auth against the device password (shared with /update).
+    static bool checkAuth(AsyncWebServerRequest* request) {
+        return request->authenticate("", get("device_pass", "camcar").c_str());
+    }
+
     static void handleUpdate(AsyncWebServerRequest* request) {
+        if (!checkAuth(request)) {
+            return request->requestAuthentication();
+        }
         bool wifiChanged = false;
 
         // Check each parameter for changes

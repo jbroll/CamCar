@@ -8,15 +8,17 @@ set -e
 # .env format (untracked -- see .env.example):
 #   WIFI_SSID=mynetwork
 #   WIFI_PASSWORD=secret
+#   DEVICE_PASSWORD=camcar   # web/OTA password baked in at flash time
 #
-# A missing or empty .env yields empty defaults, which makes the firmware fall
-# back to SoftAP setup mode so credentials can be entered via /config.
+# A missing or empty .env yields empty WiFi defaults, which makes the firmware
+# fall back to SoftAP setup mode. DEVICE_PASSWORD defaults to "camcar".
 
 env_file="${1:-.env}"
 output="src/gen/secrets.h"
 
 ssid=""
 password=""
+device_pass=""
 
 if [ -f "$env_file" ]; then
     # Parse KEY=VALUE pairs without sourcing the file (avoids executing
@@ -36,10 +38,17 @@ if [ -f "$env_file" ]; then
             \'*\') value="${value#\'}"; value="${value%\'}" ;;
         esac
         case "$key" in
-            WIFI_SSID)     ssid="$value" ;;
-            WIFI_PASSWORD) password="$value" ;;
+            WIFI_SSID)       ssid="$value" ;;
+            WIFI_PASSWORD)   password="$value" ;;
+            DEVICE_PASSWORD) device_pass="$value" ;;
         esac
     done < "$env_file"
+fi
+
+# The device (web/OTA) password always has a usable default so a fresh flash is
+# reachable; override it via DEVICE_PASSWORD in .env.
+if [ -z "$device_pass" ]; then
+    device_pass="camcar"
 fi
 
 # Escape backslashes and double-quotes for embedding in a C string literal.
@@ -57,6 +66,7 @@ cat > "$output" << EOF
 
 #define WIFI_SSID_DEFAULT "$(escape "$ssid")"
 #define WIFI_PASSWORD_DEFAULT "$(escape "$password")"
+#define DEVICE_PASSWORD_DEFAULT "$(escape "$device_pass")"
 
 #endif // SECRETS_H
 EOF

@@ -312,9 +312,8 @@ void setup(void) {
 
   PrefEdit::begin(&server, "/config", configParams);
 
-  // First boot: seed the default device password (changeable in the dialog).
-  // The /update endpoint is Basic-auth gated with it (empty username).
-  if (PrefEdit::get("device_pass").length() == 0) PrefEdit::set("device_pass", "camcar");
+  if (PrefEdit::get("device_pass").length() == 0)
+    PrefEdit::set("device_pass", DEVICE_PASSWORD_DEFAULT);
   OtaWeb::begin(&server, &camera);
 
   // Current network settings for the config dialog to pre-fill (non-secret

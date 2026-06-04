@@ -34,10 +34,7 @@ private:
     static volatile bool _ok;
 
     static bool authed(AsyncWebServerRequest* request) {
-        // Single device password, no username -- clients send an empty user
-        // (HTTP Basic "Authorization: Basic base64(\":<pass>\")").
-        String pass = PrefEdit::get("device_pass", "camcar");
-        return request->authenticate("", pass.c_str());
+        return PrefEdit::checkAuth(request);   // shared device-password auth
     }
 
     // Runs after the whole body is received: report success/failure, schedule

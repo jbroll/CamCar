@@ -270,23 +270,36 @@ window.onload = function () {
     // ---- Network & Security save (folds the old /config page into the dialog) ----
     document.getElementById("cfgSave").addEventListener("click", function () {
         var status = document.getElementById("cfgStatus");
-        // Always send the non-secret fields; send a password only if the user
-        // typed one (blank = leave the stored value unchanged). hostname/ssid
-        // unchanged from their loaded values are no-ops server-side.
+        var auth = sessionStorage.getItem("devicePass") || prompt("Device password");
+        if (!auth) return;
+        sessionStorage.setItem("devicePass", auth);
+
         var params = new URLSearchParams();
         params.set("hostname", document.getElementById("cfgHostname").value.trim());
         params.set("ssid", document.getElementById("cfgSsid").value.trim());
         var pw = document.getElementById("cfgPass").value;
-        if (pw) params.set("password", pw);
+        if (pw) params.set("password", pw);              // blank = unchanged
         var dpw = document.getElementById("cfgDevicePass").value;
         if (dpw) params.set("device_pass", dpw);
 
         status.textContent = "Saving…";
         fetch("/config", {
             method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": "Basic " + btoa(":" + auth)
+            },
             body: params.toString()
-        }).then(function (r) { return r.text(); }).then(function (t) {
+        }).then(function (r) {
+            if (r.status === 401) {
+                sessionStorage.removeItem("devicePass");
+                status.textContent = "Wrong device password";
+                return null;
+            }
+            return r.text();
+        }).then(function (t) {
+            if (t === null) return;
+            if (dpw) sessionStorage.setItem("devicePass", dpw);   // new pass for next auth
             status.textContent = (t.indexOf("reboot") >= 0)
                 ? "Saved — rebooting to apply WiFi…"
                 : "Saved.";
