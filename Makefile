@@ -23,7 +23,10 @@ endif
 # AI-Thinker CAM keeps its default scheme.
 PARTITION_SRC := partitions/camcar_ota_16MB.csv
 ifeq ($(TARGET),cam)
-PARTITION_DEP :=
+# The cam uses a built-in scheme (min_spiffs). A sketch-dir partitions.csv would
+# OVERRIDE the FQBN PartitionScheme in the esp32 core, so a leftover one from a
+# prior S3 build must be removed first.
+PARTITION_DEP := no-partitions-csv
 else
 PARTITION_DEP := partitions.csv
 endif
@@ -64,6 +67,10 @@ VENDOR_LIBS := libraries
 partitions.csv: $(PARTITION_SRC)
 	cp $(PARTITION_SRC) partitions.csv
 
+.PHONY: no-partitions-csv
+no-partitions-csv:
+	rm -f partitions.csv
+
 build: gen-sources $(PARTITION_DEP)
 	$(ARDUINO_CLI) compile --fqbn $(BOARD) --libraries $(VENDOR_LIBS) -e $(INO_FILE)
 
@@ -88,7 +95,7 @@ monitor:
 try: upload monitor
 
 clean:
-	rm -f $(GEN)
+	rm -rf $(GEN)
 	rm -rf build/
 	rm -f *.bin
 	rm -f *.elf
