@@ -34,6 +34,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
 # ---- Stream resolution ladder (must match src/Camera.cpp RES_LADDER) --------
@@ -507,6 +508,19 @@ def make_tests(host, args):
             car.close()
         return "tank/camr accepted, stream alive"
 
+    def test_ota_auth():
+        # POST /update with no credentials must be rejected (401), proving the
+        # endpoint is auth-gated and never flashes for anonymous clients.
+        url = f"http://{host}/update"
+        req = urllib.request.Request(url, data=b"", method="POST")
+        try:
+            urllib.request.urlopen(req, timeout=8)
+            code = 200
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 401, f"expected 401 without creds, got {code}"
+        return "rejected unauthenticated /update (401)"
+
     # RTSP tests run LAST: a session teardown can currently reboot the board
     # (see the C1 double-free), and putting them last keeps that from
     # cascading into the healthy HTTP/WS/config tests.
@@ -521,6 +535,7 @@ def make_tests(host, args):
         ("config_fps", test_config_fps),
         ("config_xclk", test_config_xclk),
         ("carinput_drive", test_carinput_drive),
+        ("ota_auth", test_ota_auth),
         ("rtsp_tcp", test_rtsp_tcp),
         ("rtsp_udp", test_rtsp_udp),
         ("rtsp_concurrent", test_rtsp_concurrent),
