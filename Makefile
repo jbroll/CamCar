@@ -7,7 +7,10 @@ ARDUINO_CLI=arduino-cli
 # ESP32-CAM). Override per-invocation, e.g. `make upload TARGET=cam`.
 TARGET ?= s3
 ifeq ($(TARGET),cam)
-  BOARD = esp32:esp32:esp32cam
+  # min_spiffs gives dual 1.9MB OTA app slots on the AI-Thinker's 4MB flash
+  # (binary ~1.4MB fits with headroom), enabling the same web /update OTA as
+  # the S3. One-time USB flash needed to lay down the OTA table.
+  BOARD = esp32:esp32:esp32cam:PartitionScheme=min_spiffs
   PORT ?= /dev/ttyUSB0
 else
   BOARD = esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=custom
