@@ -34,9 +34,10 @@ private:
     static volatile bool _ok;
 
     static bool authed(AsyncWebServerRequest* request) {
-        String user = PrefEdit::get("ota_user", "admin");
-        String pass = PrefEdit::get("ota_pass", "camcar");
-        return request->authenticate(user.c_str(), pass.c_str());
+        // Single device password, no username -- clients send an empty user
+        // (HTTP Basic "Authorization: Basic base64(\":<pass>\")").
+        String pass = PrefEdit::get("device_pass", "camcar");
+        return request->authenticate("", pass.c_str());
     }
 
     // Runs after the whole body is received: report success/failure, schedule

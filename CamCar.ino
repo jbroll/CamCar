@@ -312,20 +312,18 @@ void setup(void) {
 
   PrefEdit::begin(&server, "/config", configParams);
 
-  // First boot: seed default OTA credentials (changeable at /config). The
-  // /update endpoint is Basic-auth gated with these.
-  if (PrefEdit::get("ota_user").length() == 0) PrefEdit::set("ota_user", "admin");
-  if (PrefEdit::get("ota_pass").length() == 0) PrefEdit::set("ota_pass", "camcar");
+  // First boot: seed the default device password (changeable in the dialog).
+  // The /update endpoint is Basic-auth gated with it (empty username).
+  if (PrefEdit::get("device_pass").length() == 0) PrefEdit::set("device_pass", "camcar");
   OtaWeb::begin(&server, &camera);
 
-  // Current network/security settings for the config dialog to pre-fill
-  // (non-secret values only; passwords are write-only -- blank means unchanged).
+  // Current network settings for the config dialog to pre-fill (non-secret
+  // values only; the password is write-only -- blank means unchanged).
   server.on("/config.json", HTTP_GET, [](AsyncWebServerRequest* request) {
     String json = "{";
     json += "\"hostname\":\"" + PrefEdit::get("hostname") + "\",";
     json += "\"hostname_effective\":\"" + networkHostname() + "\",";
-    json += "\"ssid\":\"" + PrefEdit::get("ssid") + "\",";
-    json += "\"ota_user\":\"" + PrefEdit::get("ota_user", "admin") + "\"";
+    json += "\"ssid\":\"" + PrefEdit::get("ssid") + "\"";
     json += "}";
     AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
     resp->addHeader("Cache-Control", "no-store");

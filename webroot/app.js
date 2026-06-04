@@ -244,7 +244,6 @@ window.onload = function () {
             document.getElementById("cfgHostname").value = c.hostname || "";
             document.getElementById("cfgHostname").placeholder = c.hostname_effective || "camcar-xxxxxx";
             document.getElementById("cfgSsid").value = c.ssid || "";
-            document.getElementById("cfgOtaUser").value = c.ota_user || "";
         }).catch(function () {});
     }
     function openDialog() {
@@ -277,11 +276,10 @@ window.onload = function () {
         var params = new URLSearchParams();
         params.set("hostname", document.getElementById("cfgHostname").value.trim());
         params.set("ssid", document.getElementById("cfgSsid").value.trim());
-        params.set("ota_user", document.getElementById("cfgOtaUser").value.trim());
         var pw = document.getElementById("cfgPass").value;
         if (pw) params.set("password", pw);
-        var opw = document.getElementById("cfgOtaPass").value;
-        if (opw) params.set("ota_pass", opw);
+        var dpw = document.getElementById("cfgDevicePass").value;
+        if (dpw) params.set("device_pass", dpw);
 
         status.textContent = "Saving…";
         fetch("/config", {
@@ -293,7 +291,7 @@ window.onload = function () {
                 ? "Saved — rebooting to apply WiFi…"
                 : "Saved.";
             document.getElementById("cfgPass").value = "";
-            document.getElementById("cfgOtaPass").value = "";
+            document.getElementById("cfgDevicePass").value = "";
         }).catch(function () { status.textContent = "Save failed"; });
     });
 
@@ -303,17 +301,16 @@ window.onload = function () {
         var status = document.getElementById("otaStatus");
         var bar = document.getElementById("otaBar");
         if (!file) { status.textContent = "Choose a .bin first"; return; }
-        var user = sessionStorage.getItem("otaUser") || prompt("Firmware user", "admin");
-        var pass = sessionStorage.getItem("otaPass") || prompt("Firmware password");
-        if (!user || !pass) return;
-        sessionStorage.setItem("otaUser", user);
-        sessionStorage.setItem("otaPass", pass);
+        var pass = sessionStorage.getItem("devicePass") || prompt("Device password");
+        if (!pass) return;
+        sessionStorage.setItem("devicePass", pass);
 
         var fd = new FormData();
         fd.append("firmware", file, file.name);
         var xhr = new XMLHttpRequest();
         xhr.open("POST", "/update", true);
-        xhr.setRequestHeader("Authorization", "Basic " + btoa(user + ":" + pass));
+        // Single device password, no username (empty user in HTTP Basic).
+        xhr.setRequestHeader("Authorization", "Basic " + btoa(":" + pass));
         xhr.upload.onprogress = function (e) {
             if (e.lengthComputable) {
                 var pct = Math.round(e.loaded / e.total * 100);
@@ -325,9 +322,8 @@ window.onload = function () {
             if (xhr.status === 200) {
                 status.textContent = "OK — rebooting…";
             } else if (xhr.status === 401) {
-                status.textContent = "Auth failed";
-                sessionStorage.removeItem("otaUser");
-                sessionStorage.removeItem("otaPass");
+                status.textContent = "Wrong device password";
+                sessionStorage.removeItem("devicePass");
             } else {
                 status.textContent = "Failed: " + (xhr.responseText || xhr.status);
             }

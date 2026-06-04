@@ -78,14 +78,13 @@ upload: build
 	$(ARDUINO_CLI) upload --fqbn $(BOARD) --port $(PORT) $(INO_FILE)
 
 # Wireless firmware update over WiFi: build, then POST the binary to the live
-# board's /update endpoint (Basic auth). Override creds/host as needed, e.g.
-#   make upload-ota HOST=camcar-f0f5bd.local OTA_PASS=secret
-OTA_USER ?= admin
-OTA_PASS ?= camcar
+# board's /update endpoint (device password, no username). Override as needed:
+#   make upload-ota HOST=camcar-f0f5bd.local DEVICE_PASS=secret
+DEVICE_PASS ?= camcar
 S3_BIN := build/esp32.esp32.esp32s3/CamCar.ino.bin
 
 upload-ota: build
-	curl --fail --progress-bar --user $(OTA_USER):$(OTA_PASS) \
+	curl --fail --progress-bar --user ":$(DEVICE_PASS)" \
 	  -F firmware=@$(S3_BIN) http://$(HOST)/update
 	@echo "\nFirmware posted; board rebooting into new image."
 
