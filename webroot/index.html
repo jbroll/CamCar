@@ -105,8 +105,25 @@
                 <span id="otaStatus"></span>
             </div>
 
-            <div class="cfg-group">
-                <a href="/config" target="_blank">WiFi / advanced config &#8599;</a>
+            <div class="cfg-group" id="netGroup">
+                <h3>Network &amp; Security</h3>
+                <label class="cfg-field">Hostname
+                    <input id="cfgHostname" type="text" autocomplete="off" placeholder="camcar-xxxxxx">
+                </label>
+                <label class="cfg-field">WiFi SSID
+                    <input id="cfgSsid" type="text" autocomplete="off">
+                </label>
+                <label class="cfg-field">WiFi Password
+                    <input id="cfgPass" type="password" autocomplete="new-password" placeholder="(unchanged)">
+                </label>
+                <label class="cfg-field">OTA User
+                    <input id="cfgOtaUser" type="text" autocomplete="off">
+                </label>
+                <label class="cfg-field">OTA Password
+                    <input id="cfgOtaPass" type="password" autocomplete="new-password" placeholder="(unchanged)">
+                </label>
+                <button id="cfgSave" type="button">Save network settings</button>
+                <span id="cfgStatus"></span>
             </div>
         </div>
     </div>

@@ -237,12 +237,23 @@ window.onload = function () {
 
     // ---- Config dialog (hamburger) ----
     var overlay = document.getElementById("configOverlay");
+    function loadNetSettings() {
+        // Pre-fill the Network & Security fields from the device (non-secret
+        // values; password fields stay blank = "leave unchanged").
+        fetch("/config.json").then(function (r) { return r.json(); }).then(function (c) {
+            document.getElementById("cfgHostname").value = c.hostname || "";
+            document.getElementById("cfgHostname").placeholder = c.hostname_effective || "camcar-xxxxxx";
+            document.getElementById("cfgSsid").value = c.ssid || "";
+            document.getElementById("cfgOtaUser").value = c.ota_user || "";
+        }).catch(function () {});
+    }
     function openDialog() {
         // Safe-stop on open so a held joystick command doesn't persist while
         // the joysticks are disabled behind the dialog.
         if (websocketCarInput) { websocketCarInput.send("tank 0 0"); websocketCarInput.send("camr 0 0"); }
         document.body.classList.add("dialog-open");
         overlay.hidden = false;
+        loadNetSettings();
     }
     function closeDialog() {
         overlay.hidden = true;
@@ -255,6 +266,35 @@ window.onload = function () {
     });
     document.addEventListener("keydown", function (e) {
         if (e.key === "Escape" && !overlay.hidden) closeDialog();   // ESC closes
+    });
+
+    // ---- Network & Security save (folds the old /config page into the dialog) ----
+    document.getElementById("cfgSave").addEventListener("click", function () {
+        var status = document.getElementById("cfgStatus");
+        // Always send the non-secret fields; send a password only if the user
+        // typed one (blank = leave the stored value unchanged). hostname/ssid
+        // unchanged from their loaded values are no-ops server-side.
+        var params = new URLSearchParams();
+        params.set("hostname", document.getElementById("cfgHostname").value.trim());
+        params.set("ssid", document.getElementById("cfgSsid").value.trim());
+        params.set("ota_user", document.getElementById("cfgOtaUser").value.trim());
+        var pw = document.getElementById("cfgPass").value;
+        if (pw) params.set("password", pw);
+        var opw = document.getElementById("cfgOtaPass").value;
+        if (opw) params.set("ota_pass", opw);
+
+        status.textContent = "Saving…";
+        fetch("/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: params.toString()
+        }).then(function (r) { return r.text(); }).then(function (t) {
+            status.textContent = (t.indexOf("reboot") >= 0)
+                ? "Saved — rebooting to apply WiFi…"
+                : "Saved.";
+            document.getElementById("cfgPass").value = "";
+            document.getElementById("cfgOtaPass").value = "";
+        }).catch(function () { status.textContent = "Save failed"; });
     });
 
     // ---- Firmware (OTA) upload ----

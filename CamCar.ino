@@ -318,6 +318,20 @@ void setup(void) {
   if (PrefEdit::get("ota_pass").length() == 0) PrefEdit::set("ota_pass", "camcar");
   OtaWeb::begin(&server, &camera);
 
+  // Current network/security settings for the config dialog to pre-fill
+  // (non-secret values only; passwords are write-only -- blank means unchanged).
+  server.on("/config.json", HTTP_GET, [](AsyncWebServerRequest* request) {
+    String json = "{";
+    json += "\"hostname\":\"" + PrefEdit::get("hostname") + "\",";
+    json += "\"hostname_effective\":\"" + networkHostname() + "\",";
+    json += "\"ssid\":\"" + PrefEdit::get("ssid") + "\",";
+    json += "\"ota_user\":\"" + PrefEdit::get("ota_user", "admin") + "\"";
+    json += "}";
+    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
+    resp->addHeader("Cache-Control", "no-store");
+    request->send(resp);
+  });
+
   // High-res still: GET /snapshot?res=<index>[&download=1]. Pauses the stream,
   // captures one frame at the requested size, then resumes.
   server.on("/snapshot", HTTP_GET, [](AsyncWebServerRequest* request) {

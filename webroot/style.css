@@ -204,7 +204,7 @@ body {
 
 #configDialog select,
 #configDialog button,
-#configDialog input[type="file"] {
+#configDialog input {
     background: rgba(0, 0, 0, 0.6);
     color: #0f0;
     border: 1px solid #0f0;
@@ -213,6 +213,31 @@ body {
     border-radius: 5px;
     min-height: 44px;
     box-sizing: border-box;
+}
+
+/* Stacked label + full-width input rows in the Network & Security group. */
+.cfg-field {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 3px;
+    font-size: 12px;
+    color: #6f6;
+}
+
+.cfg-field input {
+    width: 100%;
+}
+
+#cfgSave {
+    width: 100%;
+    margin-top: 4px;
+}
+
+#cfgStatus {
+    width: 100%;
+    font-size: 13px;
+    color: #6f6;
 }
 
 #cfgClose {

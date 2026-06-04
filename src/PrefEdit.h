@@ -70,16 +70,15 @@ public:
             }
         }
 
+        // The config UI is the in-page hamburger dialog, which saves via fetch
+        // and reads a plain-text status. (No standalone page to redirect to.)
         if (wifiChanged) {
             // New WiFi credentials only take effect on reconnect, so reboot.
             // Defer it (see loop()) so this response can flush first.
             _rebootAt = millis() + REBOOT_DELAY_MS;
-            request->send(200, "text/html",
-                "<html><body><h1>Saved</h1>"
-                "<p>Rebooting to apply WiFi settings...</p></body></html>");
+            request->send(200, "text/plain", "rebooting");
         } else {
-            // Redirect back to the configuration page
-            request->redirect(request->url());
+            request->send(200, "text/plain", "saved");
         }
     }
 
