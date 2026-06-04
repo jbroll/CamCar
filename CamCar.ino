@@ -18,6 +18,7 @@
 
 #include "src/PrefEdit.h"
 #include "src/WebHandler.h"
+#include "src/OtaWeb.h"
 
 Servo panServo;
 Servo tiltServo;
@@ -311,6 +312,12 @@ void setup(void) {
 
   PrefEdit::begin(&server, "/config", configParams);
 
+  // First boot: seed default OTA credentials (changeable at /config). The
+  // /update endpoint is Basic-auth gated with these.
+  if (PrefEdit::get("ota_user").length() == 0) PrefEdit::set("ota_user", "admin");
+  if (PrefEdit::get("ota_pass").length() == 0) PrefEdit::set("ota_pass", "camcar");
+  OtaWeb::begin(&server, &camera);
+
   // High-res still: GET /snapshot?res=<index>[&download=1]. Pauses the stream,
   // captures one frame at the requested size, then resumes.
   server.on("/snapshot", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -401,6 +408,7 @@ void loop() {
   //delay(1000);
 
   PrefEdit::loop();
+  OtaWeb::loop();
 
   wsCamera.cleanupClients();
   wsCarInput.cleanupClients();

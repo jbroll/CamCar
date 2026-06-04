@@ -8,6 +8,8 @@ const char* configParams[] = {
     "quality",
     "xclk",
     "fps",
+    "ota_user",
+    "ota_pass",
     nullptr  // terminator
 };
 
