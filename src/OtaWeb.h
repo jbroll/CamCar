@@ -28,6 +28,10 @@ private:
     static constexpr unsigned long REBOOT_DELAY_MS = 1500;
     static CameraHandler* _camera;
     static unsigned long _rebootAt;
+    // True only after a real image has been fully written and verified. Guards
+    // against an empty/garbage POST (Update never errored because it never ran)
+    // being reported as success and rebooting the board for nothing.
+    static volatile bool _ok;
 
     static bool authed(AsyncWebServerRequest* request) {
         String user = PrefEdit::get("ota_user", "admin");
@@ -41,10 +45,12 @@ private:
         if (!authed(request)) {
             return request->requestAuthentication();
         }
-        bool ok = !Update.hasError();
+        bool ok = _ok;
+        String msg = ok ? String("Update OK -- rebooting")
+                        : (Update.hasError() ? String(Update.errorString())
+                                             : String("no firmware received"));
         AsyncWebServerResponse* resp = request->beginResponse(
-            ok ? 200 : 500, "text/plain",
-            ok ? String("Update OK -- rebooting") : String(Update.errorString()));
+            ok ? 200 : 400, "text/plain", msg);
         resp->addHeader("Connection", "close");
         request->send(resp);
         if (ok) {
@@ -60,6 +66,7 @@ private:
             if (!authed(request)) {
                 return;
             }
+            _ok = false;
             Serial.printf("[ota] start: %s\n", filename.c_str());
             if (_camera) {
                 _camera->setCameraEnabled(false);  // free the producer during flash
@@ -73,7 +80,9 @@ private:
                 Update.printError(Serial);
             }
             if (final) {
-                if (Update.end(true)) {
+                // Require some bytes written so a zero-length part can't pass.
+                if ((index + len) > 0 && Update.end(true)) {
+                    _ok = true;
                     Serial.printf("[ota] success: %u bytes\n",
                                   (unsigned)(index + len));
                 } else {
@@ -86,5 +95,6 @@ private:
 
 CameraHandler* OtaWeb::_camera = nullptr;
 unsigned long OtaWeb::_rebootAt = 0;
+volatile bool OtaWeb::_ok = false;
 
 #endif
