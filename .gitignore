@@ -11,3 +11,6 @@ __pycache__/
 src/gen/
 
 .*.swp
+
+# Build artifact: copied from partitions/ for the esp32 "custom" scheme
+/partitions.csv
