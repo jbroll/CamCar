@@ -216,16 +216,23 @@ window.onload = function () {
         var idx = document.getElementById("snapResSelect").value;
         return "/snapshot?res=" + idx + (download ? "&download=1" : "");
     }
-    document.getElementById("snapView").addEventListener("click", function () {
-        window.open(snapUrl(false), "_blank");
-    });
-    document.getElementById("snapSave").addEventListener("click", function () {
+    function doSnapView() { window.open(snapUrl(false), "_blank"); }
+    function doSnapSave() {
         var a = document.createElement("a");
         a.href = snapUrl(true);
         a.download = "snapshot.jpg";
         document.body.appendChild(a);
         a.click();
         a.remove();
+    }
+    // Bound on both the main-screen buttons and their duplicates in the dialog.
+    ["snapView", "snapViewCfg"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener("click", doSnapView);
+    });
+    ["snapSave", "snapSaveCfg"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener("click", doSnapSave);
     });
 
     // ---- Config dialog (hamburger) ----
@@ -245,6 +252,9 @@ window.onload = function () {
     document.getElementById("cfgClose").addEventListener("click", closeDialog);
     overlay.addEventListener("click", function (e) {
         if (e.target === overlay) closeDialog();   // tap the scrim to close
+    });
+    document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !overlay.hidden) closeDialog();   // ESC closes
     });
 
     // ---- Firmware (OTA) upload ----
