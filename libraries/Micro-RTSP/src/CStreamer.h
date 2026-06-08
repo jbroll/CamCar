@@ -39,6 +39,11 @@ public:
     String getURIPresentation(){ return m_URIPresentation; };
     String getURIStream(){ return m_URIStream; };
 
+    // CamCar patch: device password sessions require via HTTP-Basic on
+    // DESCRIBE/SETUP/PLAY. Empty (the default) means no auth -- stock behaviour.
+    void setAuthPassword( const String &p ){ m_AuthPassword = p; };
+    String getAuthPassword(){ return m_AuthPassword; };
+
 protected:
 
     void    streamFrame(unsigned const char *data, uint32_t dataLen, uint32_t curMsec);
@@ -46,6 +51,7 @@ protected:
     String  m_URIHost; // Host:port URI part that client should use to connect. also it is reported in session answers where appropriate.
     String  m_URIPresentation; // name of presentation part of URI. sessions will check if client used correct one
     String  m_URIStream; // stream part of the URI.
+    String  m_AuthPassword; // CamCar patch: device password; empty = no auth.
 
 private:
     int    SendRtpPacket(unsigned const char *jpeg, int jpegLen, int fragmentOffset, BufPtr quant0tbl = NULL, BufPtr quant1tbl = NULL);// returns new fragmentOffset or 0 if finished with frame

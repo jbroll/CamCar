@@ -2,7 +2,9 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <strings.h>           // strncasecmp
 #include <ctime>
+#include "mbedtls/base64.h"    // CamCar patch: decode Basic auth credentials
 
 //===========================================================
 //===========================================================
@@ -48,6 +50,7 @@ void CRtspSession::newCommandInit()
     memset( m_CommandStreamPart,    0x00, sizeof( m_CommandStreamPart ) );
     memset( m_CommandHostPort,  0x00, sizeof( m_CommandHostPort ) );
     m_ContentLength = 0;
+    m_Authenticated = false;        // CamCar patch: re-evaluated per request
 }
 
 /*! @brief read numeric stuff after header name and check all possible sanity
@@ -262,6 +265,25 @@ bool CRtspSession::ParseRtspRequest( char * aRequest, unsigned aRequestSize )
             continue; // loop to next line
         }
 
+        // CamCar patch: HTTP-Basic credentials. Validate the value in place
+        // (temporarily \0-terminating at the line end) against the device pass.
+        if ( 0 == strncmp( "Authorization:", cur_pos, 14 ) )
+        {
+            char *v = cur_pos + 14;
+            while ( *v == ' ' || *v == '\t' ) ++v;
+
+            char *eol = v;
+            while ( *eol && *eol != '\r' && *eol != '\n' ) ++eol;
+
+            char saved = *eol;
+            *eol = '\0';
+            m_Authenticated = checkAuthHeader( v );
+            *eol = saved;
+
+            cur_pos = eol;
+            continue; // loop to next line
+        }
+
         // for other headers we gluing continued strings together to simplify analysis
         for ( char *p = cur_pos; *p; ++p )
         {
@@ -359,6 +381,19 @@ RTSP_CMD_TYPES CRtspSession::Handle_RtspRequest( char *aRequest, unsigned aReque
 {
     if ( ParseRtspRequest( aRequest, aRequestSize ) )
     {
+        // CamCar patch: gate the content-bearing methods behind Basic auth when
+        // a device password is configured. OPTIONS (clients probe it first) and
+        // TEARDOWN (must always clean up) stay open.
+        bool needsAuth = m_Streamer->getAuthPassword().length() > 0 &&
+                         ( m_RtspCmdType == RTSP_DESCRIBE ||
+                           m_RtspCmdType == RTSP_SETUP ||
+                           m_RtspCmdType == RTSP_PLAY );
+        if ( needsAuth && ! m_Authenticated )
+        {
+            Handle_RtspUnauthorized();
+            return RTSP_UNKNOWN;
+        }
+
         switch ( m_RtspCmdType )
         {
             case RTSP_OPTIONS:  Handle_RtspOPTION();   break;
@@ -381,6 +416,48 @@ void CRtspSession::Handle_RtspOPTION()
              "Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE\r\n\r\n", m_CSeq);
 
     socketsend(m_RtspClient,Response,strlen(Response));
+}
+
+// CamCar patch: validate a "Basic <base64>" value against the streamer's device
+// password. Accepts a blank username (the port-80 empty-username convention) or
+// the fixed "camcar" username. Basic is base64, not encryption -- LAN only.
+bool CRtspSession::checkAuthHeader( char *value )
+{
+    if ( strncasecmp( value, "Basic ", 6 ) != 0 )
+        return false;
+
+    char *b64 = value + 6;
+    while ( *b64 == ' ' || *b64 == '\t' ) ++b64;
+
+    unsigned char out[128];
+    size_t outLen = 0;
+    if ( mbedtls_base64_decode( out, sizeof( out ) - 1, &outLen,
+                                (const unsigned char *)b64, strlen( b64 ) ) != 0 )
+        return false;
+    out[ outLen ] = '\0';
+
+    char *creds = (char *)out;          // "user:pass"
+    char *colon = strchr( creds, ':' );
+    if ( ! colon )
+        return false;
+    *colon = '\0';
+    const char *user = creds;
+    const char *pass = colon + 1;
+
+    String want = m_Streamer->getAuthPassword();
+    bool userOk = ( user[ 0 ] == '\0' ) || ( 0 == strcmp( user, "camcar" ) );
+    return userOk && want == pass;
+}
+
+void CRtspSession::Handle_RtspUnauthorized()
+{
+    static char Response[256];
+
+    snprintf( Response, sizeof( Response ),
+              "RTSP/1.0 401 Unauthorized\r\nCSeq: %u\r\n"
+              "WWW-Authenticate: Basic realm=\"CamCar\"\r\n\r\n", m_CSeq );
+
+    socketsend( m_RtspClient, Response, strlen( Response ) );
 }
 
 void CRtspSession::Handle_RtspDESCRIBE() // FIXME: too much redundancy. should eliminate intermediate buffers.

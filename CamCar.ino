@@ -317,8 +317,9 @@ void setup(void) {
   OtaWeb::begin(&server, &camera);
 
   // Login: a correct device password sets the camcar_auth cookie that gates the
-  // whole port-80 app (UI, websockets, config, OTA, snapshot). :81/:554 are
-  // separate servers and stay open for NVR/Motion clients.
+  // whole port-80 app (UI, websockets, config, OTA, snapshot). The :81 MJPEG and
+  // :554 RTSP servers gate the same password via HTTP/RTSP Basic auth (blank or
+  // "camcar" username), so NVR/Motion clients authenticate with it too.
   server.on("/login", HTTP_POST, [](AsyncWebServerRequest* request) {
     String pass = request->hasParam("password", true)
                   ? request->getParam("password", true)->value() : String();

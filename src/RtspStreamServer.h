@@ -2,6 +2,7 @@
 #define RTSP_STREAM_SERVER_H
 
 #include "StreamServer.h"
+#include "PrefEdit.h"         // device password for RTSP Basic auth
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <list>
@@ -51,6 +52,7 @@ protected:
     void run() override {
         mStreamer = new SharedFrameStreamer(mCam);
         mStreamer->setURI(WiFi.localIP().toString() + ":" + String(554));  // mjpeg/1
+        mStreamer->setAuthPassword(PrefEdit::get("device_pass", "camcar"));
         uint32_t lastImg = millis();
 
         for (;;) {
@@ -66,6 +68,8 @@ protected:
 
             WiFiClient inc = accept();             // non-blocking
             if (inc) {
+                // Pick up a runtime device-password change for new sessions.
+                mStreamer->setAuthPassword(PrefEdit::get("device_pass", "camcar"));
                 WiFiClient* wc = new WiFiClient(inc);   // persist for the session
                 CRtspSession* s = mStreamer->addSession(wc);
                 mClients.push_back({s, wc});

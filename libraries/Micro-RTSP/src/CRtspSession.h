@@ -57,6 +57,12 @@ private:
     void Handle_RtspSETUP();
     void Handle_RtspPLAY();
 
+    // CamCar patch: HTTP-Basic auth. checkAuthHeader() validates one
+    // "Authorization:" value against the streamer's device password (blank or
+    // "camcar" username accepted); Handle_RtspUnauthorized() emits 401.
+    bool checkAuthHeader( char *value );
+    void Handle_RtspUnauthorized();
+
     // global session state parameters
     int m_RtspSessionID;
     SOCKET m_Client;
@@ -86,4 +92,6 @@ private:
     unsigned m_RecvBufPos;                 // cursor into m_RecvBuf
     HdrState m_HdrState;                    // header-parse state across reads
     char     m_RecvBuf[RTSP_BUFFER_SIZE];   // per-session request/response buffer
+
+    bool     m_Authenticated;               // CamCar patch: this request carried valid Basic auth
 };

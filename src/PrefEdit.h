@@ -3,6 +3,7 @@
 
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
+#include "mbedtls/base64.h"
 #include "FileSystem.h"
 
 class PrefEdit {
@@ -67,6 +68,38 @@ public:
         i += 12;
         int end = cookies.indexOf(';', i);
         return end < 0 ? cookies.substring(i) : cookies.substring(i, end);
+    }
+
+    // Validate an HTTP "Basic <base64>" Authorization header value against the
+    // device password. For the off-port-80 stream servers (:81 MJPEG, :554
+    // RTSP), which have no AsyncWebServerRequest. Accepts a blank username (the
+    // port-80 empty-username Basic convention) OR the fixed "camcar" username,
+    // so clients that demand a username field (MotionEye/NVRs) work too.
+    // NOTE: Basic is base64, not encryption -- fine on the trusted LAN here.
+    static bool checkBasicAuth(const String& authHeaderValue) {
+        int sp = authHeaderValue.indexOf(' ');
+        if (sp < 0 || !authHeaderValue.substring(0, sp).equalsIgnoreCase("Basic")) {
+            return false;
+        }
+        String b64 = authHeaderValue.substring(sp + 1);
+        b64.trim();
+
+        unsigned char out[128];
+        size_t outLen = 0;
+        if (mbedtls_base64_decode(out, sizeof(out) - 1, &outLen,
+                                  (const unsigned char*)b64.c_str(), b64.length()) != 0) {
+            return false;
+        }
+        out[outLen] = '\0';
+
+        String creds = (const char*)out;          // "user:pass"
+        int colon = creds.indexOf(':');
+        if (colon < 0) return false;
+        String user = creds.substring(0, colon);
+        String pass = creds.substring(colon + 1);
+
+        return pass == get("device_pass", "camcar") &&
+               (user.length() == 0 || user == "camcar");
     }
 
     static void handleUpdate(AsyncWebServerRequest* request) {

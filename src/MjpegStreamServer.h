@@ -2,6 +2,7 @@
 #define MJPEG_STREAM_SERVER_H
 
 #include "StreamServer.h"
+#include "PrefEdit.h"          // checkBasicAuth() against the device password
 #include <esp_heap_caps.h>
 #include <list>
 #include <lwip/sockets.h>      // send() + MSG_DONTWAIT (availableForWrite() is unreliable here)
@@ -46,6 +47,39 @@ protected:
         uint32_t seq;     // producer seq of the frame in buf (0 = none loaded yet)
     };
 
+    // Read the HTTP request head (up to the blank line) into `head`, bounded by
+    // a deadline and a byte cap so a silent/garbage client can't park the accept
+    // loop. Returns true if the full header block (CRLFCRLF) arrived.
+    static bool readRequestHead(NetworkClient& c, String& head) {
+        head = "";
+        head.reserve(512);
+        uint32_t deadline = millis() + 2000;
+        while (millis() < deadline && head.length() < 2048) {
+            if (c.available()) {
+                head += (char)c.read();
+                if (head.endsWith("\r\n\r\n")) return true;
+            } else if (!c.connected()) {
+                return false;
+            } else {
+                delay(2);
+            }
+        }
+        return head.endsWith("\r\n\r\n");
+    }
+
+    // Value of header `name` (lower-case) from a raw request head, or "".
+    static String headerValue(const String& head, const char* name) {
+        String lower = head;
+        lower.toLowerCase();
+        int i = lower.indexOf(String(name) + ":");
+        if (i < 0) return "";
+        i += strlen(name) + 1;
+        int end = head.indexOf("\r\n", i);
+        String v = (end < 0) ? head.substring(i) : head.substring(i, end);
+        v.trim();
+        return v;
+    }
+
     void run() override {
         // Staging buffer in PSRAM: the producer's latest frame, copied once per
         // loop and then fanned to each client's own buffer. Off the task stack
@@ -61,19 +95,31 @@ protected:
             // Admit a newly-connected viewer (non-blocking), if we have room.
             NetworkClient inc = accept();
             if (inc) {
-                uint8_t* cb = nullptr;
-                if (shared && (int)clients.size() < MAX_CLIENTS)
-                    cb = (uint8_t*)heap_caps_malloc(FRAME_CAP + HDR_CAP, MALLOC_CAP_SPIRAM);
-                if (!cb) {
-                    inc.stop();                    // OOM or at client cap: refuse
+                inc.setNoDelay(true);
+                // Gate on the device password (HTTP Basic). Reading the request
+                // head blocks only this task, never async_tcp or the producer.
+                String head;
+                if (!readRequestHead(inc, head) ||
+                    !PrefEdit::checkBasicAuth(headerValue(head, "authorization"))) {
+                    inc.print(F("HTTP/1.1 401 Unauthorized\r\n"
+                               "WWW-Authenticate: Basic realm=\"CamCar\"\r\n"
+                               "Content-Length: 0\r\n"
+                               "Connection: close\r\n\r\n"));
+                    inc.stop();
                 } else {
-                    inc.setNoDelay(true);
-                    inc.print(F("HTTP/1.1 200 OK\r\n"
-                               "Access-Control-Allow-Origin: *\r\n"
-                               "Cache-Control: no-store\r\n"
-                               "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"));
-                    clients.push_back(Client{inc, cb, 0, 0, 0});  // seq 0 => next frame
-                    mCam.addStreamClient();        // keep the producer running
+                    uint8_t* cb = nullptr;
+                    if (shared && (int)clients.size() < MAX_CLIENTS)
+                        cb = (uint8_t*)heap_caps_malloc(FRAME_CAP + HDR_CAP, MALLOC_CAP_SPIRAM);
+                    if (!cb) {
+                        inc.stop();                // OOM or at client cap: refuse
+                    } else {
+                        inc.print(F("HTTP/1.1 200 OK\r\n"
+                                   "Access-Control-Allow-Origin: *\r\n"
+                                   "Cache-Control: no-store\r\n"
+                                   "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"));
+                        clients.push_back(Client{inc, cb, 0, 0, 0});  // seq 0 => next frame
+                        mCam.addStreamClient();    // keep the producer running
+                    }
                 }
             }
 
