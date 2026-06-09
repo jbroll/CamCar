@@ -117,6 +117,7 @@ public:
 
                 if (newValue != currentValue) {
                     setValue(*param, newValue.c_str());
+                    _changed = true;          // signal loop() to reload live config
                     if (strcmp(*param, "ssid") == 0 ||
                         strcmp(*param, "password") == 0) {
                         wifiChanged = true;
@@ -145,6 +146,14 @@ public:
         }
     }
 
+    // True once since the last call if any config value changed via /config.
+    // Lets the main loop reload live settings (drive/camera calibration) on save.
+    static bool consumeChanged() {
+        bool c = _changed;
+        _changed = false;
+        return c;
+    }
+
 private:
     static constexpr unsigned long REBOOT_DELAY_MS = 1000;
 
@@ -153,6 +162,7 @@ private:
     static const char** _params;
     static bool _inited;
     static unsigned long _rebootAt;
+    static bool _changed;
 
     static String getValue(const char* param) {
         return get(param);
@@ -169,5 +179,6 @@ const char** PrefEdit::_params = nullptr;
 Preferences PrefEdit::_prefs;
 bool PrefEdit::_inited = false;
 unsigned long PrefEdit::_rebootAt = 0;
+bool PrefEdit::_changed = false;
 
 #endif

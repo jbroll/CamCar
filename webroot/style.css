@@ -249,6 +249,29 @@ body {
     color: #6cf;
 }
 
+/* Calibration group: inline checkbox rows + side-by-side min/max number inputs */
+.cfg-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    font-size: 13px;
+    color: #6f6;
+}
+.cfg-check input[type=checkbox] {
+    width: 24px;
+    min-height: 24px;
+    flex: 0 0 auto;
+    accent-color: #0f0;
+}
+.cfg-pair {
+    display: flex;
+    gap: 6px;
+}
+.cfg-pair input { width: 100%; }
+#cfgCalSave { width: 100%; margin-top: 4px; }
+#cfgCalStatus { width: 100%; font-size: 13px; color: #6f6; }
+
 #otaBar {
     width: 100%;
     height: 16px;

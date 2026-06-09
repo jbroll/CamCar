@@ -49,9 +49,43 @@ RtspStreamServer  rtspServer(camera, 554);
 // Sign-magnitude drive for one motor: speed -100..100 via PWM on its two input
 // pins (the H-bridge enable is tied high). PWM the input matching the direction
 // and hold the other low -- independent proportional speed, no separate enable.
-void driveMotor(int in1Pin, int in2Pin, int speed) {
+// ---- Drive/camera calibration (NVS-backed; see Prefs.h). Defaults = no-op. ----
+struct DriveCal {
+  bool motSwap = false, motInvL = false, motInvR = false;
+  int  lMin = 0, lMax = 255, rMin = 0, rMax = 255;     // per-motor PWM floor/cap
+  bool camSwap = false, panInv = false, tiltInv = false;
+  int  panMin = 0, panMax = 180, tiltMin = 0, tiltMax = 180;  // servo travel (deg)
+} gCal;
+
+static bool prefBool(const char* k) { return PrefEdit::get(k, "0") == "1"; }
+static int  prefInt(const char* k, int def, int lo, int hi) {
+  return constrain((int)PrefEdit::get(k, String(def)).toInt(), lo, hi);
+}
+
+// Reload calibration from NVS into gCal -- called at boot and on each /config save.
+void loadDriveCal() {
+  PrefEdit::initStorage();   // idempotent; safe regardless of call order
+  gCal.motSwap = prefBool("mot_swap");
+  gCal.motInvL = prefBool("mot_inv_l");
+  gCal.motInvR = prefBool("mot_inv_r");
+  gCal.lMin = prefInt("mot_l_min",   0, 0, 255);
+  gCal.lMax = prefInt("mot_l_max", 255, 0, 255);
+  gCal.rMin = prefInt("mot_r_min",   0, 0, 255);
+  gCal.rMax = prefInt("mot_r_max", 255, 0, 255);
+  gCal.camSwap = prefBool("cam_swap");
+  gCal.panInv  = prefBool("pan_inv");
+  gCal.tiltInv = prefBool("tilt_inv");
+  gCal.panMin  = prefInt("pan_min",    0, 0, 180);
+  gCal.panMax  = prefInt("pan_max",  180, 0, 180);
+  gCal.tiltMin = prefInt("tilt_min",   0, 0, 180);
+  gCal.tiltMax = prefInt("tilt_max", 180, 0, 180);
+}
+
+// Sign-magnitude PWM on the active input. Duty scales abs(speed) into the
+// motor's [pwmMin,pwmMax]: pwmMin overcomes stiction, pwmMax caps top speed.
+void driveMotor(int in1Pin, int in2Pin, int speed, int pwmMin, int pwmMax) {
   speed = constrain(speed, -100, 100);
-  int duty = map(abs(speed), 0, 100, 0, 255);
+  int duty = (speed == 0) ? 0 : constrain(map(abs(speed), 0, 100, pwmMin, pwmMax), 0, 255);
   if (speed > 0) {
     ledcWrite(in1Pin, duty);
     ledcWrite(in2Pin, 0);
@@ -65,18 +99,26 @@ void driveMotor(int in1Pin, int in2Pin, int speed) {
 }
 
 // Arcade/tank mix: y = throttle, x = turn (both -100..100). Proportional
-// differential steering -- e.g. forward + slight turn curves gently.
+// differential steering, then calibration: swap routes the mix to the other
+// physical motor; invert reverses each physical motor's direction.
 void tankDrive(int x, int y) {
   int left  = constrain(y + x, -100, 100);
   int right = constrain(y - x, -100, 100);
-  driveMotor(RIGHT_MOTOR_IN1, RIGHT_MOTOR_IN2, right);
-  driveMotor(LEFT_MOTOR_IN1,  LEFT_MOTOR_IN2,  left);
+  if (gCal.motSwap) { int t = left; left = right; right = t; }
+  if (gCal.motInvL) left  = -left;
+  if (gCal.motInvR) right = -right;
+  driveMotor(LEFT_MOTOR_IN1,  LEFT_MOTOR_IN2,  left,  gCal.lMin, gCal.lMax);
+  driveMotor(RIGHT_MOTOR_IN1, RIGHT_MOTOR_IN2, right, gCal.rMin, gCal.rMax);
 }
 
-// Camera pan/tilt: x/y in -100..100 -> servo angle 0..180 (90 = centre).
+// Camera pan/tilt: x/y in -100..100, calibrated -- swap axes, invert each, then
+// map into the per-servo travel limits (default 0..180, 90 = centre).
 void cameraControl(int x, int y) {
-  panServo.write(map(x, -100, 100, 0, 180));
-  tiltServo.write(map(y, -100, 100, 0, 180));
+  if (gCal.camSwap) { int t = x; x = y; y = t; }
+  if (gCal.panInv)  x = -x;
+  if (gCal.tiltInv) y = -y;
+  panServo.write (map(x, -100, 100, gCal.panMin,  gCal.panMax));
+  tiltServo.write(map(y, -100, 100, gCal.tiltMin, gCal.tiltMax));
 }
 
 void onCarInputWebSocketEvent(AsyncWebSocket *server, 
@@ -353,6 +395,7 @@ void setup(void) {
   setupWiFi();
 
   PrefEdit::begin(&server, "/config", configParams);
+  loadDriveCal();                  // drive/camera calibration from NVS
 
   if (PrefEdit::get("device_pass").length() == 0)
     PrefEdit::set("device_pass", DEVICE_PASSWORD_DEFAULT);
@@ -380,7 +423,22 @@ void setup(void) {
     String json = "{";
     json += "\"hostname\":\"" + PrefEdit::get("hostname") + "\",";
     json += "\"hostname_effective\":\"" + networkHostname() + "\",";
-    json += "\"ssid\":\"" + PrefEdit::get("ssid") + "\"";
+    json += "\"ssid\":\"" + PrefEdit::get("ssid") + "\",";
+    // Calibration (from gCal so values reflect the live, defaulted state):
+    json += "\"mot_swap\":"  + String(gCal.motSwap ? 1 : 0) + ",";
+    json += "\"mot_inv_l\":" + String(gCal.motInvL ? 1 : 0) + ",";
+    json += "\"mot_inv_r\":" + String(gCal.motInvR ? 1 : 0) + ",";
+    json += "\"mot_l_min\":" + String(gCal.lMin) + ",";
+    json += "\"mot_l_max\":" + String(gCal.lMax) + ",";
+    json += "\"mot_r_min\":" + String(gCal.rMin) + ",";
+    json += "\"mot_r_max\":" + String(gCal.rMax) + ",";
+    json += "\"cam_swap\":"  + String(gCal.camSwap ? 1 : 0) + ",";
+    json += "\"pan_inv\":"   + String(gCal.panInv ? 1 : 0) + ",";
+    json += "\"tilt_inv\":"  + String(gCal.tiltInv ? 1 : 0) + ",";
+    json += "\"pan_min\":"   + String(gCal.panMin) + ",";
+    json += "\"pan_max\":"   + String(gCal.panMax) + ",";
+    json += "\"tilt_min\":"  + String(gCal.tiltMin) + ",";
+    json += "\"tilt_max\":"  + String(gCal.tiltMax);
     json += "}";
     AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
     resp->addHeader("Cache-Control", "no-store");
@@ -481,6 +539,7 @@ void loop() {
   //delay(1000);
 
   PrefEdit::loop();
+  if (PrefEdit::consumeChanged()) loadDriveCal();   // apply calibration edits live
   OtaWeb::loop();
   wifiReconnectTick();             // re-associate if the link dropped
 

@@ -244,6 +244,15 @@ window.onload = function () {
             document.getElementById("cfgHostname").value = c.hostname || "";
             document.getElementById("cfgHostname").placeholder = c.hostname_effective || "camcar-xxxxxx";
             document.getElementById("cfgSsid").value = c.ssid || "";
+            // Calibration fields
+            var cb = function (id, v) { var e = document.getElementById(id); if (e) e.checked = (v == 1); };
+            var nv = function (id, v) { var e = document.getElementById(id); if (e) e.value = v; };
+            cb("cfgMotSwap", c.mot_swap); cb("cfgMotInvL", c.mot_inv_l); cb("cfgMotInvR", c.mot_inv_r);
+            nv("cfgMotLMin", c.mot_l_min); nv("cfgMotLMax", c.mot_l_max);
+            nv("cfgMotRMin", c.mot_r_min); nv("cfgMotRMax", c.mot_r_max);
+            cb("cfgCamSwap", c.cam_swap); cb("cfgPanInv", c.pan_inv); cb("cfgTiltInv", c.tilt_inv);
+            nv("cfgPanMin", c.pan_min); nv("cfgPanMax", c.pan_max);
+            nv("cfgTiltMin", c.tilt_min); nv("cfgTiltMax", c.tilt_max);
         }).catch(function () {});
     }
     function openDialog() {
@@ -298,6 +307,32 @@ window.onload = function () {
             status.textContent = (t.indexOf("reboot") >= 0)
                 ? "Saved — rebooting to apply WiFi…"
                 : "Saved.";
+        }).catch(function () { status.textContent = "Save failed"; });
+    });
+
+    // ---- Calibration save (applies live, no reboot) ----
+    document.getElementById("cfgCalSave").addEventListener("click", function () {
+        var status = document.getElementById("cfgCalStatus");
+        var p = new URLSearchParams();
+        var cb = function (key, id) { p.set(key, document.getElementById(id).checked ? "1" : "0"); };
+        var nv = function (key, id) { p.set(key, String(parseInt(document.getElementById(id).value, 10) || 0)); };
+        cb("mot_swap", "cfgMotSwap"); cb("mot_inv_l", "cfgMotInvL"); cb("mot_inv_r", "cfgMotInvR");
+        nv("mot_l_min", "cfgMotLMin"); nv("mot_l_max", "cfgMotLMax");
+        nv("mot_r_min", "cfgMotRMin"); nv("mot_r_max", "cfgMotRMax");
+        cb("cam_swap", "cfgCamSwap"); cb("pan_inv", "cfgPanInv"); cb("tilt_inv", "cfgTiltInv");
+        nv("pan_min", "cfgPanMin"); nv("pan_max", "cfgPanMax");
+        nv("tilt_min", "cfgTiltMin"); nv("tilt_max", "cfgTiltMax");
+
+        status.textContent = "Saving…";
+        fetch("/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: p.toString()
+        }).then(function (r) {
+            if (r.status === 401) { location.reload(); return null; }
+            return r.text();
+        }).then(function (t) {
+            if (t !== null) status.textContent = "Saved.";
         }).catch(function () { status.textContent = "Save failed"; });
     });
 

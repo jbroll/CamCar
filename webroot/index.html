@@ -122,6 +122,34 @@
                 <button id="cfgSave" type="button">Save network settings</button>
                 <span id="cfgStatus"></span>
             </div>
+
+            <div class="cfg-group" id="calGroup">
+                <h3>Calibration</h3>
+                <label class="cfg-check"><input id="cfgMotSwap" type="checkbox"> Swap L/R motors</label>
+                <label class="cfg-check"><input id="cfgMotInvL" type="checkbox"> Invert left motor</label>
+                <label class="cfg-check"><input id="cfgMotInvR" type="checkbox"> Invert right motor</label>
+                <label class="cfg-field">Left motor PWM min / max (0-255)
+                    <span class="cfg-pair"><input id="cfgMotLMin" type="number" min="0" max="255">
+                        <input id="cfgMotLMax" type="number" min="0" max="255"></span>
+                </label>
+                <label class="cfg-field">Right motor PWM min / max (0-255)
+                    <span class="cfg-pair"><input id="cfgMotRMin" type="number" min="0" max="255">
+                        <input id="cfgMotRMax" type="number" min="0" max="255"></span>
+                </label>
+                <label class="cfg-check"><input id="cfgCamSwap" type="checkbox"> Swap pan/tilt</label>
+                <label class="cfg-check"><input id="cfgPanInv" type="checkbox"> Invert pan</label>
+                <label class="cfg-check"><input id="cfgTiltInv" type="checkbox"> Invert tilt</label>
+                <label class="cfg-field">Pan min / max (deg)
+                    <span class="cfg-pair"><input id="cfgPanMin" type="number" min="0" max="180">
+                        <input id="cfgPanMax" type="number" min="0" max="180"></span>
+                </label>
+                <label class="cfg-field">Tilt min / max (deg)
+                    <span class="cfg-pair"><input id="cfgTiltMin" type="number" min="0" max="180">
+                        <input id="cfgTiltMax" type="number" min="0" max="180"></span>
+                </label>
+                <button id="cfgCalSave" type="button">Save calibration</button>
+                <span id="cfgCalStatus"></span>
+            </div>
         </div>
     </div>
 
