@@ -209,9 +209,20 @@ void setUpPinModes() {
   }
 }
 
-// WiFi connection behaviour
-#define WIFI_CONNECT_TIMEOUT_MS 15000  // give up on a stored network after this
-#define WIFI_CONNECT_BLINK_MS   500    // status LED toggle / poll interval
+// WiFi connection behaviour. A marginal/detuned antenna (e.g. header pins near
+// the module) often misses the *first* association but holds the link fine once
+// up, so we re-issue WiFi.begin() in cycles instead of giving up after one
+// window, and reconnect on drops rather than stranding the board offline.
+#define WIFI_CONNECT_TIMEOUT_MS 45000  // total boot window before falling back to SoftAP
+#define WIFI_RETRY_INTERVAL_MS  7000   // re-issue WiFi.begin() this often while connecting
+#define WIFI_CONNECT_BLINK_MS   250    // status LED toggle / poll interval
+#define WIFI_RECONNECT_CHECK_MS 5000   // loop() reconnect-watchdog cadence
+// TX power: lowered from max (19.5dBm). High TX draws current spikes that brown
+// out a marginal supply and can self-interfere during the 4-way handshake -- a
+// documented "reason 2 / auth expired" fix is ~8.5dBm. Bump back up if range suffers.
+#define WIFI_TX_POWER           WIFI_POWER_8_5dBm
+
+static bool gWifiStaActive = false;    // true once associated as STA (not SoftAP fallback)
 const char* SETUP_AP_SSID = "CamCar-setup";
 const char* SETUP_AP_PASSWORD = "camcarsetup";  // must be >= 8 chars (WPA2)
 
@@ -265,26 +276,43 @@ void setupWiFi() {
   }
 
   String host = networkHostname();
+  WiFi.persistent(false);           // creds live in NVS via PrefEdit; don't thrash WiFi flash
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(host.c_str());   // DHCP option 12 -> router shows the name
+  WiFi.setAutoReconnect(true);      // IDF re-associates on drop (loop() backstops it)
+  WiFi.setSleep(false);             // no modem-sleep: low, stable latency
+  WiFi.setTxPower(WIFI_TX_POWER);   // max TX to push a marginal/detuned antenna over the line
+
   WiFi.begin(ssid.c_str(), password.c_str());
   Serial.printf("Connecting to WiFi network '%s' as '%s' ", ssid.c_str(), host.c_str());
 
+  // Re-issue begin() in cycles: a marginal antenna can miss several attempts
+  // before catching, so retry instead of dropping to SoftAP after one window.
   unsigned long start = millis();
+  unsigned long lastBegin = start;
   while (WiFi.status() != WL_CONNECTED &&
          (millis() - start) < WIFI_CONNECT_TIMEOUT_MS) {
+    if (millis() - lastBegin >= WIFI_RETRY_INTERVAL_MS) {
+      Serial.print("[retry]");
+      WiFi.disconnect();
+      WiFi.begin(ssid.c_str(), password.c_str());
+      lastBegin = millis();
+    }
     digitalWrite(STATUS_LED, !digitalRead(STATUS_LED));  // Toggle LED
     Serial.print(".");
     delay(WIFI_CONNECT_BLINK_MS);
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    // Disable modem-sleep AFTER association so it reliably sticks; this is
-    // critical for low, stable latency (power-save causes ~400ms RTT spikes).
+    // Re-assert after association so they reliably stick (power-save causes
+    // ~400ms RTT spikes; TX power can reset on (re)assoc on some cores).
     WiFi.setSleep(false);
+    WiFi.setTxPower(WIFI_TX_POWER);
+    gWifiStaActive = true;           // arm the loop() reconnect watchdog
     Serial.print("\nConnected to the WiFi network at ");
     Serial.println(WiFi.localIP());
-    Serial.printf("RSSI: %ld dBm\n", (long)WiFi.RSSI());
+    Serial.printf("RSSI: %ld dBm  TX: %d (0.25dBm units)\n",
+                  (long)WiFi.RSSI(), (int)WiFi.getTxPower());
     if (MDNS.begin(host.c_str())) {                 // -> http://<host>.local/
       MDNS.addService("http", "tcp", 80);
       Serial.printf("mDNS: http://%s.local/\n", host.c_str());
@@ -293,6 +321,20 @@ void setupWiFi() {
     Serial.println("\nWiFi connection timed out; starting setup AP.");
     startSetupAP();
   }
+}
+
+// loop() backstop: if we associated as STA and the link later drops, re-issue
+// begin() periodically (belt-and-suspenders alongside setAutoReconnect). Does
+// nothing in SoftAP-fallback mode (gWifiStaActive stays false).
+void wifiReconnectTick() {
+  if (!gWifiStaActive) return;
+  static uint32_t lastCheck = 0;
+  if (millis() - lastCheck < WIFI_RECONNECT_CHECK_MS) return;
+  lastCheck = millis();
+  if (WiFi.status() == WL_CONNECTED) return;
+  Serial.println("[wifi] link down -- reconnecting");
+  WiFi.disconnect();
+  WiFi.begin(PrefEdit::get("ssid").c_str(), PrefEdit::get("password").c_str());
 }
 
 void setup(void) {
@@ -440,6 +482,7 @@ void loop() {
 
   PrefEdit::loop();
   OtaWeb::loop();
+  wifiReconnectTick();             // re-associate if the link dropped
 
   wsCamera.cleanupClients();
   wsCarInput.cleanupClients();

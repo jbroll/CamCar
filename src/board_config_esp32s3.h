@@ -23,16 +23,27 @@
 #define CAM_PIN_PCLK  13
 
 // ---- Drive peripherals (wired by user to these free GPIOs) ----
-// Motor speed is sign-magnitude PWM on the four direction inputs (2 per motor);
-// the driver's enable is tied HIGH to 3.3V in hardware, so GPIO 1 is unused/free.
+// Pins are grouped on ONE module edge so the drive harness is a compact bundle
+// and every *unused* header position can be left UNPOPULATED. Bare, unterminated
+// header pins spread across the board detune/interfere with the 2.4GHz WiFi
+// (observed: clipping the scattered pins restored WiFi); a small, terminated
+// footprint avoids it. Two tight clusters on the same edge (module pad order
+// ...14,21,47,48,45,0,35-37,38,39,40,41,42,2,1...):
+//   * servo pair  -> 21 (tilt) + 47 (pan), adjacent
+//   * motor block -> 39,40,41,42, then 2,1 (LED + battery) right after
+// The two clusters can't merge: the octal-PSRAM pins 35-37 and strapping 45/0
+// sit between 21/47 and the motor block. LIGHT stays on 14 -- it routes to the
+// front with the camera, not the rear drive harness.
+//   Reserved on N16R8 (do not use): 33-37 (octal PSRAM), 0/3/45/46 (strapping),
+//   19/20 (USB), 43/44 (UART0), 48 (onboard NeoPixel). Battery needs ADC1 (1-10).
 #define MOTOR_SPEED_PIN  -1   // SPARE (motor enable tied to 3.3V in hardware)
 #define RIGHT_MOTOR_IN1  41   // PWM, sign-magnitude
 #define RIGHT_MOTOR_IN2  42
 #define LEFT_MOTOR_IN1   40
 #define LEFT_MOTOR_IN2   39
-#define PAN_PIN          47   // pan servo signal
-#define TILT_PIN         21   // tilt servo signal
-#define LIGHT_PIN        14   // headlight LED (PWM)
+#define PAN_PIN          47   // pan servo signal  (servo pair with TILT)
+#define TILT_PIN         21   // tilt servo signal (adjacent to PAN=47)
+#define LIGHT_PIN        14   // headlight LED (PWM) -- front, with the camera
 #define STATUS_LED        2   // onboard LED (WiFi-connect blink)
 #define BATTERY_PIN       1   // ADC1_CH0 (the old MOTOR_SPEED spare); battery divider input
 
