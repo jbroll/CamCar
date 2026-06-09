@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CamCar — ESP32-S3 Pinout</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#666; --line:#d0d0d0;
+    --servo:#e8f0ff; --servo-b:#3a6ea5;
+    --motor:#eafbe8; --motor-b:#3a7d34;
+    --power:#fff4e0; --power-b:#b5791a;
+    --cam:#f3eefc; --cam-b:#6b4fa0;
+    --bad:#ffecec; --bad-b:#b33;
+  }
+  *{box-sizing:border-box}
+  body{font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);max-width:900px;margin:24px auto;padding:0 18px;background:#fff}
+  h1{font-size:21px;margin:0 0 2px}
+  h2{font-size:15px;margin:20px 0 8px;border-bottom:2px solid var(--line);padding-bottom:3px}
+  .sub{color:var(--muted);font-size:12.5px;margin:0 0 6px}
+  table{border-collapse:collapse;width:100%;margin:6px 0}
+  th,td{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:#f4f4f4;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.gpio{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+          text-align:center;width:64px;white-space:nowrap}
+  .grp{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;border:1px solid}
+  .g-servo{background:var(--servo);border-color:var(--servo-b);color:var(--servo-b)}
+  .g-motor{background:var(--motor);border-color:var(--motor-b);color:var(--motor-b)}
+  .g-power{background:var(--power);border-color:var(--power-b);color:var(--power-b)}
+  .g-cam{background:var(--cam);border-color:var(--cam-b);color:var(--cam-b)}
+  tr.servo td.gpio{background:var(--servo)} tr.motor td.gpio{background:var(--motor)}
+  tr.power td.gpio{background:var(--power)} tr.cam td.gpio{background:var(--cam)}
+  .reserved{background:var(--bad);border:1px solid var(--bad-b);border-radius:6px;
+            padding:8px 12px;font-size:13px}
+  .reserved b{color:var(--bad-b)}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace}
+  pre{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;
+      background:#fafafa;border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto}
+  .note{font-size:12px;color:var(--muted);margin-top:6px}
+  .cols{display:flex;gap:20px;flex-wrap:wrap}
+  .cols>div{flex:1;min-width:280px}
+  @media print{
+    body{margin:0;max-width:none;font-size:11.5px}
+    h2{margin-top:12px}
+    table,pre,.reserved{page-break-inside:avoid}
+    .noprint{display:none}
+  }
+</style>
+</head>
+<body>
+
+<h1>CamCar — Freenove ESP32-S3-WROOM CAM Pinout</h1>
+<p class="sub">Module: ESP32-S3-WROOM-1 <b>N16R8</b> (16 MB flash / 8 MB octal PSRAM) ·
+source of truth: <code>src/board_config_esp32s3.h</code></p>
+
+<h2>Drive harness — wire these <span class="note" style="text-transform:none">(group tightly on one edge; leave all unused header positions <b>unpopulated</b>)</span></h2>
+<table>
+  <thead><tr><th>GPIO</th><th>Signal</th><th>Group</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr class="servo"><td class="gpio">21</td><td>Tilt servo</td><td><span class="grp g-servo">servo pair</span></td><td>PWM signal</td></tr>
+    <tr class="servo"><td class="gpio">47</td><td>Pan servo</td><td><span class="grp g-servo">servo pair</span></td><td>PWM signal · adjacent to 21</td></tr>
+    <tr class="motor"><td class="gpio">39</td><td>Left motor IN2</td><td><span class="grp g-motor">motor block</span></td><td>PWM, sign-magnitude</td></tr>
+    <tr class="motor"><td class="gpio">40</td><td>Left motor IN1</td><td><span class="grp g-motor">motor block</span></td><td>PWM, sign-magnitude</td></tr>
+    <tr class="motor"><td class="gpio">41</td><td>Right motor IN1</td><td><span class="grp g-motor">motor block</span></td><td>PWM, sign-magnitude</td></tr>
+    <tr class="motor"><td class="gpio">42</td><td>Right motor IN2</td><td><span class="grp g-motor">motor block</span></td><td>PWM, sign-magnitude</td></tr>
+    <tr class="power"><td class="gpio">2</td><td>Status LED</td><td><span class="grp g-power">onboard</span></td><td>onboard LED — no wire</td></tr>
+    <tr class="power"><td class="gpio">1</td><td>Battery sense</td><td><span class="grp g-power">ADC1_CH0</span></td><td>resistor-divider input</td></tr>
+    <tr class="power"><td class="gpio">14</td><td>Headlight LED</td><td><span class="grp g-power">front</span></td><td>PWM · routes to front w/ camera</td></tr>
+    <tr><td class="gpio">—</td><td>Motor driver EN</td><td></td><td>tied HIGH to 3.3 V in hardware</td></tr>
+  </tbody>
+</table>
+
+<div class="cols">
+<div>
+<h2>Pan / Tilt servos — wiring</h2>
+<table>
+  <thead><tr><th>GPIO</th><th>Servo signal</th></tr></thead>
+  <tbody>
+    <tr class="servo"><td class="gpio">47</td><td>Pan — signal lead</td></tr>
+    <tr class="servo"><td class="gpio">21</td><td>Tilt — signal lead</td></tr>
+  </tbody>
+</table>
+<pre>
+ standard 3-wire hobby servo:
+   signal (orange/white) ─► ESP GPIO  (47 pan · 21 tilt)
+   +5V    (red)          ─► 5V rail   ← BEC, NOT the L298N reg
+   GND    (brown/black)  ─► common ground
+</pre>
+<p class="note"><b>Power:</b> servos pull big stall-current spikes — feed <b>+5&nbsp;V from a
+separate BEC (≥1–2&nbsp;A)</b> and share ground with the ESP &amp; battery. Don't run them off the
+L298N's weak onboard 5&nbsp;V regulator — it sags and resets the board. Add a 470–1000&nbsp;µF cap
+across the servo +5&nbsp;V rail to absorb the spikes.</p>
+<p class="note"><b>Direction/range</b> is set in firmware (<code>cameraControl()</code>); if a servo
+moves the wrong way, reverse it in code rather than re-pinning.</p>
+</div>
+<div>
+<h2>Reserved — never wire (N16R8)</h2>
+<p class="reserved">
+<b>33–37</b> octal PSRAM &nbsp;·&nbsp; <b>0 / 3 / 45 / 46</b> strapping<br>
+<b>19 / 20</b> native USB &nbsp;·&nbsp; <b>43 / 44</b> UART0<br>
+<b>48</b> onboard NeoPixel<br>
+<span class="note">Battery sense must use an ADC1 pin (GPIO 1–10); 1 &amp; 2 are the only non-camera ADC1 pins.</span>
+</p>
+<p class="note"><b>Why the grouping matters:</b> bare, unterminated header pins spread across the board
+detune/interfere with 2.4 GHz WiFi. Populate only the pins in use, keep them clustered, and leave the
+rest of the header empty.</p>
+</div>
+</div>
+
+<h2>Physical edge layout <span class="note" style="text-transform:none">(module pad order — confirm against the board silkscreen)</span></h2>
+<pre>
+CAMERA EDGE   3V3 EN  [4 5 6 7 15 16 17 18 8]  19̶ 20̶ 3̶ 46̶  [9 10 11 12 13]  14·LIGHT
+DRIVE  EDGE   21·TILT  47·PAN   48̶  45̶ 0̶  35̶ 36̶ 37̶  38   39·M 40·M 41·M 42·M   2·LED  1·BAT   44̶ 43̶
+              └ servo pair ┘         └─ PSRAM/strap gap ─┘    └──── motor block + LED/batt ────┘
+
+  [..] camera bus     X̶ reserved/avoid     ·NAME used by CamCar     38 = free spare
+</pre>
+<p class="note">The two used clusters (servos 21/47, motors 39–42 + LED 2 / battery 1) sit on the drive
+edge; the camera bus owns the camera edge. Everything else stays unpopulated.</p>
+
+</body>
+</html>
